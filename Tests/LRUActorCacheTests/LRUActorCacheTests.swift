@@ -10,12 +10,9 @@ private struct TestCachedValue: CachedValue, Equatable {
 struct CacheTest {
     
     private let cache: MemoryCache<String, TestCachedValue>
-    private var memoryCacheMockDependencies: MemoryCacheMockDependencies
     
     init() {
-        memoryCacheMockDependencies = MemoryCacheMockDependencies()
         cache = MemoryCache<String, TestCachedValue>(
-            dependencies: memoryCacheMockDependencies,
             totalCostLimit: 100,
             maxCount: 5
         )
@@ -30,17 +27,6 @@ struct CacheTest {
         #expect(retrievedValue == value)
     }
 
-    @Test("Remove Value")
-    func removeValue() async throws {
-        let key = "testKey"
-        let value = TestCachedValue(cost: 10)
-
-        await cache.set(value, for: key)
-        let removedValue = try #require(await cache.remove(forKey: key), "Expect to have removed item")
-        #expect(removedValue == value, "Removed item not equal to key set")
-        #expect (await cache.value(for: key) == nil, "Item was previously removed")
-    }
-    
     @Test("Max count limit")
     func maxCountLimit() async throws {
         for i in 0..<10 {
@@ -100,20 +86,61 @@ struct CacheTest {
     
     @Test("Remove all")
     func removeAll() async {
-        await cache.set(TestCachedValue(cost: 10), for: "key1")
-        await cache.set(TestCachedValue(cost: 10), for: "key2")
+        await cache.set(TestCachedValue(cost: 1), for: "key1")
+        await cache.set(TestCachedValue(cost: 1), for: "key2")
+        await cache.set(TestCachedValue(cost: 1), for: "key3")
+        await cache.set(TestCachedValue(cost: 1), for: "key4")
+        
+        #expect(await cache.value(for: "key1") != nil)
+        #expect(await cache.value(for: "key2") != nil)
+        #expect(await cache.value(for: "key3") != nil)
+        #expect(await cache.value(for: "key4") != nil)
+        
         await cache.removeAll()
         
         #expect(await cache.value(for: "key1") == nil)
         #expect(await cache.value(for: "key2") == nil)
+        #expect(await cache.value(for: "key3") == nil)
+        #expect(await cache.value(for: "key4") == nil)
     }
     
     @Test("Critical memory warning")
     func criticalMemoryWarning() async throws {
-        await cache.set(TestCachedValue(cost: 40), for: "key1")
-        await cache.set(TestCachedValue(cost: 30), for: "key2")
-        await cache.set(TestCachedValue(cost: 20), for: "key3")
-        await cache.set(TestCachedValue(cost: 15), for: "key4")
+        await cache.set(TestCachedValue(cost: 1), for: "key1")
+        await cache.set(TestCachedValue(cost: 1), for: "key2")
+        await cache.set(TestCachedValue(cost: 1), for: "key3")
+        await cache.set(TestCachedValue(cost: 1), for: "key4")
         
+        #expect(await cache.value(for: "key1") != nil)
+        #expect(await cache.value(for: "key2") != nil)
+        #expect(await cache.value(for: "key3") != nil)
+        #expect(await cache.value(for: "key4") != nil)
+        
+        await cache.handleMemoryWarning(.critical)
+        
+        #expect(await cache.value(for: "key1") == nil)
+        #expect(await cache.value(for: "key2") == nil)
+        #expect(await cache.value(for: "key3") == nil)
+        #expect(await cache.value(for: "key4") == nil)
     }
+    
+    @Test("Memory Warning")
+    func memoryWarning() async {
+        await cache.set(TestCachedValue(cost: 1), for: "key1")
+        await cache.set(TestCachedValue(cost: 1), for: "key2")
+        await cache.set(TestCachedValue(cost: 1), for: "key3")
+        await cache.set(TestCachedValue(cost: 1), for: "key4")
+        
+        await cache.handleMemoryWarning(.warning)
+
+        await halfShouldBeRemoved()
+        
+        func halfShouldBeRemoved() async {
+            #expect(await cache.value(for: "key1") == nil)
+            #expect(await cache.value(for: "key2") == nil)
+            #expect(await cache.value(for: "key3") != nil)
+            #expect(await cache.value(for: "key4") != nil)
+        }
+    }
+    
 }

@@ -16,10 +16,6 @@ public protocol CachedValue {
     var cost: Int { get }
 }
 
-public protocol MemoryCacheDepending {
-    var memoryPressureStream: AsyncStream<DispatchSource.MemoryPressureEvent> { get }
-}
-
 // MARK: - Container Class
 
 /// A private class used to wrap cached values in a doubly-linked list.
@@ -46,7 +42,6 @@ private final class Container<Key: Hashable, Value: CachedValue> {
 /// `MemoryCache` provides thread-safe access to cached values, automatically
 /// removing the least recently used items when limits are exceeded.
 public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedValue> {
-    private let dependencies: MemoryCacheDepending
     
     // MARK: - Properties
     
@@ -70,16 +65,14 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     ///   - totalCostLimit: The maximum total cost of all items in the cache.
     ///   - maxCount: The maximum number of items the cache can hold.
     public init(
-        dependencies: MemoryCacheDepending,
         totalCostLimit: Int,
         maxCount: Int = 500
     ) {
-        self.dependencies = dependencies
         self.totalCostLimit = totalCostLimit
         self.maxCount = maxCount
         
         Task {
-            await setupMemoryWarningObserver()
+            await listenForMemoryEvents()
         }
     }
     
@@ -89,16 +82,9 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     ) {
         let bytesInMegaByte = 1024 * 1024
         self.init(
-            dependencies: MemoryCacheLiveDependencies(),
             totalCostLimit: bytesInMegaByte * totalCostInMegaBytes,
             maxCount: maxCount
         )
-    }
-    
-    deinit {
-        Task { [weak self] in
-            await self?.removeMemoryWarningObserver()
-        }
     }
     
     // MARK: - Public Cache Access
@@ -108,7 +94,12 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     /// - Parameter key: The key to look up in the cache.
     /// - Returns: The cached value if found, or `nil` if not present.
     public func value(for key: Key) -> Value? {
-        guard let container = values[key] else { return nil }
+        logger.trace("value: \(key)")
+        guard let container = values[key] else {
+            logger.trace("value: not found")
+            return nil
+        }
+        logger.trace("Value found update list order")
         updateListOrder(container)
         return container.value
     }
@@ -151,7 +142,8 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     /// - Parameter key: The key of the value to remove.
     /// - Returns: The removed value, or `nil` if the key was not found.
     @discardableResult
-    public func remove(forKey key: Key) -> Value? {
+    private func remove(forKey key: Key) -> Value? {
+        logger.debug("remove key: \(key)")
         guard let container = values.removeValue(forKey: key) else {
             logger.error("Attempted to remove item that doesn't exist: \(key)")
             assertionFailure("Attempted to remove item that doesn't exist: \(key)")
@@ -186,6 +178,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     ///
     /// - Parameter container: The container to be removed.
     private func removeFromList(_ container: Container<Key, Value>) {
+        logger.trace("removeFromList")
         container.previous?.next = container.next
         container.next?.previous = container.previous
         
@@ -207,9 +200,33 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     ///
     /// - Parameter container: The container to be promoted.
     private func updateListOrder(_ container: Container<Key, Value>) {
+        logger.trace("updateListOrder")
         guard container !== head else { return }
         removeFromList(container)
         addToList(container)
+    }
+    
+    // MARK: - Memory Notifications
+    
+    private let memoryPressure: MemoryPressureNotifying = MemoryPressure()
+    
+    func handleMemoryWarning(_ event: MemoryWarning) {
+        logger.trace("handleMemoryWarning: \(event)")
+        switch event {
+        case .critical:
+            removeAll()
+        case .warning:
+            removePercentageOfItems(0.5)
+        }
+    }
+    
+    private func listenForMemoryEvents() {
+        self.memoryPressure.setEventHandler { [weak self] event in
+            guard let self else { return }
+            Task {
+                await handleMemoryWarning(event)
+            }
+        }
     }
     
     // MARK: - Cache Maintenance
@@ -251,7 +268,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
         for i in 0 ..< numberOfItemsToRemove {
             if let container = tail {
                 remove(forKey: container.key)
-                logger.debug("Removed \(i + 1)th item")
+                logger.trace("Removed \(i + 1)th item")
             } else {
                 assertionFailure("We should have found an item to remove")
                 break
@@ -265,91 +282,11 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     /// This can be useful for handling scenarios where memory needs to be fully reclaimed,
     /// or the cache contents are no longer valid.
     public func removeAll() {
+        logger.debug("removeAll")
         values.removeAll()
         head = nil
         tail = nil
         totalCost = 0
         logger.debug("Removed all items")
     }
-    
-    // MARK: - Memory Warning Handler
-    
-    private var memoryObserverTask: Task<Void, Never>?
-    
-    /// Sets up an observer for memory pressure notifications.
-    ///
-    /// This observer listens for memory warnings and takes appropriate action to reduce
-    /// the memory footprint of the cache, such as removing a portion of cached items.
-    ///
-    /// - Important: This method should only be called once to prevent multiple observers from being registered.
-    private func setupMemoryWarningObserver() {
-        precondition(memoryObserverTask == nil, "Memory warning observer is already set up")
-        memoryObserverTask = Task {
-            for await event in
-                dependencies.memoryPressureStream {
-                switch event {
-                case .warning:
-                    logger.warning("⚠️⚠️⚠️Memory warning removing half of the items⚠️⚠️⚠️")
-                    removePercentageOfItems(0.5)
-                case .critical:
-                    // Ideally warnings should have prevented this
-                    logger.warning("🚨🚨🚨🚨Hit critical memory usage🚨🚨🚨🚨")
-                    removeAll()
-                default:
-                    break
-                }
-            }
-        }
-    }
-    
-    /// Removes the memory pressure observer.
-    ///
-    /// This method cancels the task that listens for memory warnings, which should
-    /// be called when the cache is deinitialized to ensure proper cleanup.
-    private func removeMemoryWarningObserver() {
-        assert(memoryObserverTask != nil, "Memory warning observer is not set up")
-        memoryObserverTask?.cancel()
-        memoryObserverTask = nil
-    }
 }
-
-extension MemoryCacheDepending {
-    static func live() -> MemoryCacheDepending {
-        MemoryCacheLiveDependencies()
-    }
-
-    static func mock() -> MemoryCacheDepending {
-        MemoryCacheMockDependencies()
-    }
-}
-
-public struct MemoryCacheLiveDependencies: MemoryCacheDepending {
-    private let memoryPressureNotifier = MemoryPressureNotifier()
-    
-    public init() {}
-    
-    public var memoryPressureStream: AsyncStream<DispatchSource.MemoryPressureEvent> {
-        memoryPressureNotifier.memoryPressureStream
-    }
-}
-    
-#if DEBUG
-    final class MemoryCacheMockDependencies: MemoryCacheDepending {
-        private var continuation: AsyncStream<DispatchSource.MemoryPressureEvent>.Continuation?
-        
-        var memoryPressureStream: AsyncStream<DispatchSource.MemoryPressureEvent> {
-            AsyncStream { continuation in
-                self.continuation = continuation
-            }
-        }
-        
-        func triggerEvent(_ event: DispatchSource.MemoryPressureEvent) {
-            continuation?.yield(DispatchSource.MemoryPressureEvent.critical)
-        }
-        
-        func finish() {
-            continuation?.finish()
-        }
-    }
-#endif
-    
