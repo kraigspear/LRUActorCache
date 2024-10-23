@@ -42,7 +42,6 @@ private final class Container<Key: Hashable, Value: CachedValue> {
 /// `MemoryCache` provides thread-safe access to cached values, automatically
 /// removing the least recently used items when limits are exceeded.
 public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedValue> {
-    
     // MARK: - Properties
     
     private var values: [Key: Container<Key, Value>] = [:]
@@ -102,6 +101,17 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
         logger.trace("Value found update list order")
         updateListOrder(container)
         return container.value
+    }
+    
+    /// Checks if a value exists in the cache without affecting its LRU position.
+    ///
+    /// Unlike `value(for:)`, this method won't promote the item to the front of the LRU list,
+    /// making it useful for cache inspection without side effects.
+    ///
+    /// - Parameter key: The key to look up in the cache.
+    /// - Returns: `true` if the key exists in the cache, `false` otherwise.
+    public func contains(_ key: Key) -> Bool {
+        values[key] != nil
     }
     
     /// Sets a value in the cache for the given key.
@@ -179,6 +189,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     /// - Parameter container: The container to be removed.
     private func removeFromList(_ container: Container<Key, Value>) {
         logger.trace("removeFromList")
+        
         container.previous?.next = container.next
         container.next?.previous = container.previous
         
@@ -207,8 +218,8 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     }
     
     // MARK: - Memory Notifications
-    
-    private let memoryPressure: MemoryPressureNotifying = MemoryPressure()
+
+    private let memoryPressureSource = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: DispatchQueue.global())
     
     func handleMemoryWarning(_ event: MemoryWarning) {
         logger.trace("handleMemoryWarning: \(event)")
@@ -221,12 +232,21 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     }
     
     private func listenForMemoryEvents() {
-        self.memoryPressure.setEventHandler { [weak self] event in
+        memoryPressureSource.setEventHandler { [weak self] in
             guard let self else { return }
-            Task {
-                await handleMemoryWarning(event)
+            
+            Task { [self] in
+                await self.handleMemoryPressureEvent()
             }
         }
+        memoryPressureSource.resume()
+    }
+    
+    private func handleMemoryPressureEvent() {
+        guard let memoryWarning = MemoryWarning(
+            memoryPressureEvent: memoryPressureSource.data
+        ) else { return }
+        handleMemoryWarning(memoryWarning)
     }
     
     // MARK: - Cache Maintenance

@@ -143,4 +143,11 @@ struct CacheTest {
         }
     }
     
+    @Test("Contains Key")
+    func containsKeys() async {
+        await cache.set(TestCachedValue(cost: 1), for: "key1")
+        #expect(await cache.contains("key1"))
+        #expect(await !cache.contains("key2"))
+    }
+    
 }
