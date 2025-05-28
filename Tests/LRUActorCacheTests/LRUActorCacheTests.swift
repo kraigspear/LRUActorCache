@@ -216,7 +216,7 @@ struct CacheTest {
             // Writers
             for i in 0..<50 {
                 group.addTask {
-                    await self.cache.set(TestCachedValue(cost: 1), for: "key\(i)")
+                    await cache.set(TestCachedValue(cost: 1), for: "key\(i)")
                 }
             }
             
