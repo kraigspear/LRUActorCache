@@ -150,4 +150,101 @@ struct CacheTest {
         #expect(await !cache.contains("key2"))
     }
     
+    @Test("Update existing key with different cost")
+    func updateExistingKeyWithDifferentCost() async throws {
+        // Test that updating an existing key's cost works correctly
+        await cache.set(TestCachedValue(cost: 10), for: "key1")
+        
+        // Verify initial value
+        var value = await cache.value(for: "key1")
+        #expect(value?.cost == 10)
+        
+        // Update with different cost
+        await cache.set(TestCachedValue(cost: 25), for: "key1")
+        
+        // Verify update
+        value = await cache.value(for: "key1")
+        #expect(value?.cost == 25)
+        
+        // Test eviction behavior with updated costs
+        await cache.set(TestCachedValue(cost: 20), for: "key2")
+        await cache.set(TestCachedValue(cost: 20), for: "key3")
+        await cache.set(TestCachedValue(cost: 20), for: "key4")
+        
+        // Total is now 85, still under limit of 100
+        #expect(await cache.value(for: "key1") != nil)
+        #expect(await cache.value(for: "key2") != nil)
+        #expect(await cache.value(for: "key3") != nil)
+        #expect(await cache.value(for: "key4") != nil)
+        
+        // Add one more to trigger eviction
+        await cache.set(TestCachedValue(cost: 20), for: "key5")
+        
+        // Should have evicted key1 (oldest untouched)
+        #expect(await cache.value(for: "key1") == nil)
+        #expect(await cache.value(for: "key5") != nil)
+    }
+    
+    @Test("Zero cost items")
+    func zeroCostItems() async {
+        // Fill cache with zero-cost items
+        for i in 0..<10 {
+            await cache.set(TestCachedValue(cost: 0), for: "key\(i)")
+        }
+        
+        // Should respect max count limit (5) even with zero cost
+        for i in 0..<5 {
+            #expect(await cache.value(for: "key\(i)") == nil)
+        }
+        
+        for i in 5..<10 {
+            #expect(await cache.value(for: "key\(i)") != nil)
+        }
+        
+        // Add item with actual cost
+        await cache.set(TestCachedValue(cost: 50), for: "costlyKey")
+        
+        // Should still have the costly item and 4 zero-cost items
+        #expect(await cache.value(for: "costlyKey") != nil)
+        #expect(await cache.value(for: "key5") == nil) // Evicted due to max count
+    }
+    
+    @Test("Concurrent access")
+    func concurrentAccess() async throws {
+        // Test concurrent reads and writes
+        await withTaskGroup(of: Void.self) { group in
+            // Writers
+            for i in 0..<50 {
+                group.addTask {
+                    await cache.set(TestCachedValue(cost: 1), for: "key\(i)")
+                }
+            }
+            
+            // Readers
+            for i in 0..<50 {
+                group.addTask {
+                    _ = await self.cache.value(for: "key\(i)")
+                }
+            }
+            
+            // Contains checks
+            for i in 0..<50 {
+                group.addTask {
+                    _ = await self.cache.contains("key\(i)")
+                }
+            }
+        }
+        
+        // Verify cache state after concurrent access
+        var foundCount = 0
+        for i in 0..<50 {
+            if await cache.value(for: "key\(i)") != nil {
+                foundCount += 1
+            }
+        }
+        
+        // Should have at most maxCount items
+        #expect(foundCount <= 5)
+    }
+    
 }

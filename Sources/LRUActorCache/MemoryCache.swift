@@ -86,6 +86,10 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
         )
     }
     
+    deinit {
+        memoryPressureSource.cancel()
+    }
+    
     // MARK: - Public Cache Access
     
     /// Retrieves a value from the cache for the given key.
