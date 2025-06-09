@@ -55,6 +55,8 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     private var totalCost = 0
     private let totalCostLimit: Int
     
+    private let diskCache = DiskCache()
+    
     // MARK: - Initialization
     
     /// Initializes a new memory cache with the specified limits.

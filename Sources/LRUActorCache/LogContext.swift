@@ -8,7 +8,8 @@
 import os
 
 enum LogContext: String {
-    case cache = "💾cache"
+    case cache = "🐏cache"
+    case diskCache = "💾diskCache"
     case memoryPressure = "⚠️memoryPressure"
     #if DEBUG
     case mockMemoryPressure = "🧪⚠️mockMemoryPressure"

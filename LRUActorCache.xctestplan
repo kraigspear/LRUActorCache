@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "E45AA5F1-7F6B-4656-B812-74171EBF39E5",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "LRUActorCacheTests",
+        "name" : "LRUActorCacheTests"
+      }
+    }
+  ],
+  "version" : 1
+}
