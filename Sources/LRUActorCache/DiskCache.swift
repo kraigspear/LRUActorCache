@@ -8,10 +8,10 @@
 import CryptoKit
 import Foundation
 
-/// A thread-safe disk cache implementation using Swift actors.
+/// A disk cache implementation for persistent storage.
 ///
 /// `DiskCache` provides persistent storage for data objects on disk, automatically
-/// managing the cache directory in the system's caches folder. It uses URL-based
+/// managing the cache directory in the system's caches folder. It uses generic
 /// keys to store and retrieve data.
 ///
 /// ## Usage
@@ -19,20 +19,20 @@ import Foundation
 /// let cache = DiskCache()
 /// 
 /// // Store data
-/// await cache[url] = imageData
+/// cache.setValue(imageData, at: key)
 /// 
 /// // Retrieve data
-/// if let cachedData = await cache[url] {
+/// if let cachedData = cache.getData(for: key) {
 ///     // Use cached data
 /// }
 /// ```
 ///
 /// ## Implementation Details
 /// - The cache is stored in `~/Library/Caches/DiskCache/`
-/// - Cache keys are derived from the URL path after "/radar/"
-/// - All operations are thread-safe due to actor isolation
+/// - Cache keys are hashed using SHA256 for filesystem compatibility
+/// - Thread safety must be managed by the caller (e.g., MemoryCache actor)
 /// - Failed operations are logged and don't throw errors
-public actor DiskCache {
+final class DiskCache<Key: Hashable & CustomStringConvertible, Value: CachedValue>: Sendable {
     
     // MARK: - Properties
     
@@ -73,7 +73,7 @@ public actor DiskCache {
         
         if reset {
             do {
-                if fileManager.fileExists(atPath: cacheFolder.absoluteString) {
+                if fileManager.fileExists(atPath: cacheFolder.path) {
                     try fileManager.removeItem(at: cacheFolder)
                 }
             } catch {
@@ -93,33 +93,56 @@ public actor DiskCache {
         }
     }
     
+    func exist(for key: Key) -> Bool {
+        guard let cacheFolder else {
+            return false
+        }
+        let cacheSource = cacheFolder.appending(
+            path: cacheFileName(for: key)
+        )
+        return FileManager.default.fileExists(atPath: cacheSource.path)
+    }
+    
     // MARK: - Public API
     
     /// Retrieves data from the cache for a given URL.
     ///
     /// - Parameter url: The URL key for the cached data
     /// - Returns: The cached data if found, nil otherwise
-    func getData(for url: URL) -> Data? {
+    func getData(for key: Key) -> Value? {
+        
+        guard exist(for: key) else {
+            return nil
+        }
+        
+        logger.debug("key: \(key) found in cache")
+        
         guard let cacheFolder else {
             return nil
         }
         
-        let imagePath = cacheFolder.appending(path: url.cacheFileName)
-        if !FileManager.default.fileExists(atPath: imagePath.path) {
-            logger.debug("url: \(url) not found in cache at path: \(imagePath)")
-            return nil
-        }
+        let cacheSource = cacheFolder.appending(
+            path: cacheFileName(for: key)
+        )
         
-        logger.debug("url: \(url) found in cache")
+        let data: Data
         
         do {
-            let data = try Data(contentsOf: imagePath)
-            logger.debug("success loading \(url) from cache")
-            return data
+            data = try Data(contentsOf: cacheSource)
         } catch {
-            logger.error("Error loading \(url) from cache")
+            logger.error("Error loading data for \(key) from cache")
             return nil
         }
+        
+        do {
+            let value = try Value.fromData(data: data)
+            logger.debug("success loading \(key) from cache")
+            return value
+        } catch {
+            logger.error("Error decoding \(key) from cache")
+            return nil
+        }
+        
     }
     
     /// Stores data in the cache for a given URL.
@@ -127,34 +150,34 @@ public actor DiskCache {
     /// - Parameters:
     ///   - data: The data to cache
     ///   - url: The URL key for the data
-    func setData(_ data: Data, at url: URL) {
+    func setValue(_ value: Value, at key: Key) {
+        
         guard let cacheFolder else { return }
         
-        let imagePath = cacheFolder.appending(path: url.cacheFileName)
+        let cacheDestination = cacheFolder.appending(
+            path: cacheFileName(for: key)
+        )
         
         do {
-            try data.write(to: imagePath)
+            try value.data.write(to: cacheDestination)
         } catch {
-            assertionFailure("Error writing to at path: \(imagePath) cache: \(error)")
-            logger.error("Error writing to at path: \(imagePath) cache: \(error)")
+            assertionFailure("Error writing to at path: \(cacheDestination) cache: \(error)")
+            logger.error("Error writing to at path: \(cacheDestination) cache: \(error)")
         }
+    }
+    
+    private func cacheFileName(for key: Key) -> String {
+        key.description.cacheFileName
     }
 }
 
 // MARK: - URL Extension
 
-private extension URL {
+private extension String {
     var cacheFileName: String {
-        // Create SHA256 hash of the URL
-        let urlData = absoluteString.data(using: .utf8)!
-        let hash = SHA256.hash(data: urlData)
-        let hashString = hash.compactMap { String(format: "%02x", $0) }
-            .joined()
-            .prefix(16)
-        
-        // Get sanitized host
-        let host = host?.replacingOccurrences(of: ".", with: "_") ?? "unknown"
-        
-        return "\(host)_\(hashString)"
+        let data = Data(self.utf8)
+        let hash = SHA256.hash(data: data)
+        // map each byte to a two‐digit hex string
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 }

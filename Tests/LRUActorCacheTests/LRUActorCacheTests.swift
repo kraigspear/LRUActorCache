@@ -1,12 +1,22 @@
 import Testing
+import Foundation
 
 @testable import LRUActorCache
 
 // A simple CachedValue implementation for testing
 private struct TestCachedValue: CachedValue, Equatable {
     let cost: Int
+    
+    var data: Data {
+        Data()
+    }
+    
+    static func fromData(data: Data) throws -> TestCachedValue {
+        TestCachedValue(cost: data.count)
+    }
 }
 
+@Suite("CacheTest", .serialized)
 struct CacheTest {
     
     private let cache: MemoryCache<String, TestCachedValue>
@@ -14,7 +24,8 @@ struct CacheTest {
     init() {
         cache = MemoryCache<String, TestCachedValue>(
             totalCostLimit: 100,
-            maxCount: 5
+            maxCount: 5,
+            resetDiskCache: true
         )
     }
     
@@ -35,8 +46,9 @@ struct CacheTest {
             await cache.set(value, for: key)
         }
         
+        // Check that first 5 items were evicted from memory
         for i in 0..<5 {
-            #expect(await cache.value(for: "testKey\(i)") == nil)
+            #expect(await cache.contains("testKey\(i)") == false)
         }
         
         for i in 5..<10 {
@@ -51,10 +63,10 @@ struct CacheTest {
         await cache.set(TestCachedValue(cost: 20), for: "key3")
         await cache.set(TestCachedValue(cost: 15), for: "key4")
         
-        // Beyond cost, the first item, key1 should be removed
+        // Beyond cost, the first item, key1 should be removed from memory
         await cache.set(TestCachedValue(cost: 10), for: "key5")
         
-        #expect(await cache.value(for: "key1") == nil)
+        #expect(await cache.contains("key1") == false)
         
         for i in 2..<6 {
             let key = "key\(i)"
@@ -76,7 +88,8 @@ struct CacheTest {
         // Evict key2, not 1
         await cache.set(TestCachedValue(cost: 10), for: "key6")
         #expect(await cache.value(for: "key1") != nil)
-        #expect(await cache.value(for: "key2") == nil)
+        // key2 should be evicted from memory
+        #expect(await cache.contains("key2") == false)
         
         for i in 3...6 {
             let key = "key\(i)"
@@ -98,10 +111,11 @@ struct CacheTest {
         
         await cache.removeAll()
         
-        #expect(await cache.value(for: "key1") == nil)
-        #expect(await cache.value(for: "key2") == nil)
-        #expect(await cache.value(for: "key3") == nil)
-        #expect(await cache.value(for: "key4") == nil)
+        // All items should be evicted from memory (but still on disk)
+        #expect(await cache.contains("key1") == false)
+        #expect(await cache.contains("key2") == false)
+        #expect(await cache.contains("key3") == false)
+        #expect(await cache.contains("key4") == false)
     }
     
     @Test("Critical memory warning")
@@ -118,10 +132,11 @@ struct CacheTest {
         
         await cache.handleMemoryWarning(.critical)
         
-        #expect(await cache.value(for: "key1") == nil)
-        #expect(await cache.value(for: "key2") == nil)
-        #expect(await cache.value(for: "key3") == nil)
-        #expect(await cache.value(for: "key4") == nil)
+        // All items should be evicted from memory on critical warning
+        #expect(await cache.contains("key1") == false)
+        #expect(await cache.contains("key2") == false)
+        #expect(await cache.contains("key3") == false)
+        #expect(await cache.contains("key4") == false)
     }
     
     @Test("Memory Warning")
@@ -136,8 +151,9 @@ struct CacheTest {
         await halfShouldBeRemoved()
         
         func halfShouldBeRemoved() async {
-            #expect(await cache.value(for: "key1") == nil)
-            #expect(await cache.value(for: "key2") == nil)
+            // First half should be evicted from memory
+            #expect(await cache.contains("key1") == false)
+            #expect(await cache.contains("key2") == false)
             #expect(await cache.value(for: "key3") != nil)
             #expect(await cache.value(for: "key4") != nil)
         }
@@ -180,8 +196,8 @@ struct CacheTest {
         // Add one more to trigger eviction
         await cache.set(TestCachedValue(cost: 20), for: "key5")
         
-        // Should have evicted key1 (oldest untouched)
-        #expect(await cache.value(for: "key1") == nil)
+        // Should have evicted key1 from memory (oldest untouched)
+        #expect(await cache.contains("key1") == false)
         #expect(await cache.value(for: "key5") != nil)
     }
     
@@ -192,9 +208,9 @@ struct CacheTest {
             await cache.set(TestCachedValue(cost: 0), for: "key\(i)")
         }
         
-        // Should respect max count limit (5) even with zero cost
+        // Should respect max count limit (5) even with zero cost - first 5 evicted from memory
         for i in 0..<5 {
-            #expect(await cache.value(for: "key\(i)") == nil)
+            #expect(await cache.contains("key\(i)") == false)
         }
         
         for i in 5..<10 {
@@ -206,7 +222,7 @@ struct CacheTest {
         
         // Should still have the costly item and 4 zero-cost items
         #expect(await cache.value(for: "costlyKey") != nil)
-        #expect(await cache.value(for: "key5") == nil) // Evicted due to max count
+        #expect(await cache.contains("key5") == false) // Evicted from memory due to max count
     }
     
     @Test("Concurrent access")
@@ -238,12 +254,12 @@ struct CacheTest {
         // Verify cache state after concurrent access
         var foundCount = 0
         for i in 0..<50 {
-            if await cache.value(for: "key\(i)") != nil {
+            if await cache.contains("key\(i)") {
                 foundCount += 1
             }
         }
         
-        // Should have at most maxCount items
+        // Should have at most maxCount items in memory
         #expect(foundCount <= 5)
     }
     

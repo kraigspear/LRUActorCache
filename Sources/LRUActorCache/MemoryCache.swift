@@ -11,9 +11,12 @@ private let signposter = OSSignposter(logger: logger)
 ///
 /// Conforming types must provide a `cost` property, which represents the
 /// relative cost of storing the value in the cache.
-public protocol CachedValue {
+public protocol CachedValue: Sendable {
     /// The cost of storing this value in the cache.
     var cost: Int { get }
+    
+    var data: Data { get }
+    static func fromData(data: Data) throws -> Self
 }
 
 // MARK: - Container Class
@@ -41,7 +44,7 @@ private final class Container<Key: Hashable, Value: CachedValue> {
 ///
 /// `MemoryCache` provides thread-safe access to cached values, automatically
 /// removing the least recently used items when limits are exceeded.
-public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedValue> {
+public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Value: CachedValue> {
     // MARK: - Properties
     
     private var values: [Key: Container<Key, Value>] = [:]
@@ -55,22 +58,24 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     private var totalCost = 0
     private let totalCostLimit: Int
     
-    private let diskCache = DiskCache()
+    private let diskCache: DiskCache<Key, Value>
     
     // MARK: - Initialization
     
     /// Initializes a new memory cache with the specified limits.
     ///
     /// - Parameters:
-    ///   - memoryPressureNotifier: Provides notifications of memory events
     ///   - totalCostLimit: The maximum total cost of all items in the cache.
     ///   - maxCount: The maximum number of items the cache can hold.
+    ///   - resetDiskCache: If true, clears the disk cache on initialization.
     public init(
         totalCostLimit: Int,
-        maxCount: Int = 500
+        maxCount: Int = 500,
+        resetDiskCache: Bool = false
     ) {
         self.totalCostLimit = totalCostLimit
         self.maxCount = maxCount
+        self.diskCache = DiskCache(reset: resetDiskCache)
         
         Task {
             await listenForMemoryEvents()
@@ -79,12 +84,14 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     
     public init(
         totalCostInMegaBytes: Int,
-        maxCount: Int = 500
+        maxCount: Int = 500,
+        resetDiskCache: Bool = false
     ) {
         let bytesInMegaByte = 1024 * 1024
         self.init(
             totalCostLimit: bytesInMegaByte * totalCostInMegaBytes,
-            maxCount: maxCount
+            maxCount: maxCount,
+            resetDiskCache: resetDiskCache
         )
     }
     
@@ -98,15 +105,22 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     ///
     /// - Parameter key: The key to look up in the cache.
     /// - Returns: The cached value if found, or `nil` if not present.
-    public func value(for key: Key) -> Value? {
+    public func value(for key: Key) async -> Value? {
         logger.trace("value: \(key)")
-        guard let container = values[key] else {
-            logger.trace("value: not found")
-            return nil
+        
+        if let container = values[key] {
+            logger.trace("Value found update list order")
+            await updateListOrder(container)
+            return container.value
         }
-        logger.trace("Value found update list order")
-        updateListOrder(container)
-        return container.value
+        
+        if let fromDisk = diskCache.getData(for: key) {
+            logger.debug("Found item on disk for \(key)")
+            await set(fromDisk, for: key)
+            return fromDisk
+        }
+        
+        return nil
     }
     
     /// Checks if a value exists in the cache without affecting its LRU position.
@@ -128,7 +142,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     /// - Parameters:
     ///   - value: The value to cache.
     ///   - key: The key under which to store the value.
-    public func set(_ value: Value, for key: Key) {
+    public func set(_ value: Value, for key: Key) async {
         let intervalName: StaticString = "Set value"
         let signpostID = signposter.makeSignpostID()
         let interval = signposter.beginInterval(intervalName, id: signpostID)
@@ -140,7 +154,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
         if let existingContainer = values[key] {
             totalCost -= existingContainer.cost
             existingContainer.value = value
-            updateListOrder(existingContainer)
+            await updateListOrder(existingContainer)
         } else {
             let newContainer = Container(key: key, value: value)
             values[key] = newContainer
@@ -150,7 +164,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
         let totalCost = self.totalCost
         let count = self.count
         logger.debug("set cost: \(totalCost) values: \(count)")
-        removeExpiredIfNeeded()
+        await removeExpiredIfNeeded()
     }
     
     /// Removes and returns the value associated with the given key.
@@ -158,14 +172,14 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     /// - Parameter key: The key of the value to remove.
     /// - Returns: The removed value, or `nil` if the key was not found.
     @discardableResult
-    private func remove(forKey key: Key) -> Value? {
+    private func remove(forKey key: Key) async -> Value? {
         logger.debug("remove key: \(key)")
         guard let container = values.removeValue(forKey: key) else {
             logger.error("Attempted to remove item that doesn't exist: \(key)")
             assertionFailure("Attempted to remove item that doesn't exist: \(key)")
             return nil
         }
-        removeFromList(container)
+        await removeFromList(container)
         totalCost -= container.cost
         return container.value
     }
@@ -193,8 +207,10 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     /// often as part of an eviction process or reordering.
     ///
     /// - Parameter container: The container to be removed.
-    private func removeFromList(_ container: Container<Key, Value>) {
+    private func removeFromList(_ container: Container<Key, Value>) async {
         logger.trace("removeFromList")
+        
+        diskCache.setValue(container.value, at: container.key)
         
         container.previous?.next = container.next
         container.next?.previous = container.previous
@@ -216,10 +232,10 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     /// and adheres to the LRU caching policy.
     ///
     /// - Parameter container: The container to be promoted.
-    private func updateListOrder(_ container: Container<Key, Value>) {
+    private func updateListOrder(_ container: Container<Key, Value>) async {
         logger.trace("updateListOrder")
         guard container !== head else { return }
-        removeFromList(container)
+        await removeFromList(container)
         addToList(container)
     }
     
@@ -227,13 +243,13 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
 
     private let memoryPressureSource = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: DispatchQueue.global())
     
-    func handleMemoryWarning(_ event: MemoryWarning) {
+    func handleMemoryWarning(_ event: MemoryWarning) async {
         logger.trace("handleMemoryWarning: \(event)")
         switch event {
         case .critical:
             removeAll()
         case .warning:
-            removePercentageOfItems(0.5)
+            await removePercentageOfItems(0.5)
         }
     }
     
@@ -248,18 +264,18 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
         memoryPressureSource.resume()
     }
     
-    private func handleMemoryPressureEvent() {
+    private func handleMemoryPressureEvent() async {
         guard let memoryWarning = MemoryWarning(
             memoryPressureEvent: memoryPressureSource.data
         ) else { return }
-        handleMemoryWarning(memoryWarning)
+        await handleMemoryWarning(memoryWarning)
     }
     
     // MARK: - Cache Maintenance
     
-    private func removeExpiredIfNeeded() {
+    private func removeExpiredIfNeeded() async {
         while totalCost > totalCostLimit || count > maxCount, let oldestContainer = tail {
-            let removedItem = remove(forKey: oldestContainer.key)
+            let removedItem = await remove(forKey: oldestContainer.key)
             if removedItem == nil {
                 logger.fault("Failed to remove expired item: \(oldestContainer.key)")
                 // We crash because if this did happen we could end up with a run away memory issue.
@@ -280,7 +296,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
     ///   - A value of `0` means no items are removed, while `1` means all items are removed.
     ///
     /// - Warning: Passing a value outside the range `[0, 1]` will trigger an assertion failure.
-    private func removePercentageOfItems(_ percentage: Double) {
+    private func removePercentageOfItems(_ percentage: Double) async {
         guard percentage >= 0, percentage <= 1 else {
             assertionFailure("Invalid percentage: \(percentage)")
             return
@@ -293,7 +309,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible, Value: CachedV
         }
         for i in 0 ..< numberOfItemsToRemove {
             if let container = tail {
-                remove(forKey: container.key)
+                await remove(forKey: container.key)
                 logger.trace("Removed \(i + 1)th item")
             } else {
                 assertionFailure("We should have found an item to remove")
