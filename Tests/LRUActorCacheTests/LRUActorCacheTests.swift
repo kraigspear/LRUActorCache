@@ -67,9 +67,7 @@ struct CacheTest {
     private let cache: MemoryCache<String, TestCachedValue>
 
     init() {
-        cache = MemoryCache<String, TestCachedValue>(
-            resetDiskCache: true
-        )
+        cache = MemoryCache<String, TestCachedValue>()
     }
 
     @Test("Set and Retrieve Value")
@@ -91,7 +89,7 @@ struct CacheTest {
     @Test("Disk Cache Within Same Instance")
     func diskCacheWithinSameInstance() async throws {
         // Test that disk cache works within the same cache instance
-        let cache = MemoryCache<String, TestCachedValue>(resetDiskCache: true)
+        let cache = MemoryCache<String, TestCachedValue>()
         let key = "persistentKey"
         let value = TestCachedValue(someValue: "persistentValue")
         await cache.set(value, for: key)
@@ -107,7 +105,7 @@ struct CacheTest {
     @Test("Deserialization Error Handling")
     func deserializationErrorHandling() async throws {
         // Create a cache with failing values
-        let cache = MemoryCache<String, FailingCachedValue>(resetDiskCache: true)
+        let cache = MemoryCache<String, FailingCachedValue>()
 
         // Store a value that will fail deserialization when loaded from disk
         let key = "failingKey"
@@ -115,7 +113,7 @@ struct CacheTest {
         await cache.set(failingValue, for: key)
 
         // Create a new cache instance to force loading from disk
-        let cache2 = MemoryCache<String, FailingCachedValue>(resetDiskCache: false)
+        let cache2 = MemoryCache<String, FailingCachedValue>()
 
         // Attempting to retrieve should return nil due to deserialization failure
         let retrievedValue = await cache2.value(for: key)
@@ -123,14 +121,14 @@ struct CacheTest {
 
         // Verify the corrupted file was deleted - a second attempt should also return nil
         // but won't try to load from disk since the file no longer exists
-        let cache3 = MemoryCache<String, FailingCachedValue>(resetDiskCache: false)
+        let cache3 = MemoryCache<String, FailingCachedValue>()
         let secondAttempt = await cache3.value(for: key)
         #expect(secondAttempt == nil)
     }
 
     @Test("Concurrent Read Operations")
     func concurrentReadOperations() async throws {
-        let cache = MemoryCache<String, TestCachedValue>(resetDiskCache: true)
+        let cache = MemoryCache<String, TestCachedValue>()
         let key = "concurrentKey"
         let value = TestCachedValue(someValue: "concurrentValue")
 
@@ -154,7 +152,7 @@ struct CacheTest {
 
     @Test("Concurrent Write Operations")
     func concurrentWriteOperations() async throws {
-        let cache = MemoryCache<String, TestCachedValue>(resetDiskCache: true)
+        let cache = MemoryCache<String, TestCachedValue>()
 
         // Perform multiple concurrent writes to different keys
         await withTaskGroup(of: Void.self) { group in
@@ -178,7 +176,7 @@ struct CacheTest {
 
     @Test("Concurrent Mixed Operations")
     func concurrentMixedOperations() async throws {
-        let cache = MemoryCache<String, TestCachedValue>(resetDiskCache: true)
+        let cache = MemoryCache<String, TestCachedValue>()
 
         // Pre-populate some values
         for i in 0 ..< 10 {
@@ -224,7 +222,7 @@ struct CacheTest {
 
     @Test("Concurrent Same Key Updates")
     func concurrentSameKeyUpdates() async throws {
-        let cache = MemoryCache<String, TestCachedValue>(resetDiskCache: true)
+        let cache = MemoryCache<String, TestCachedValue>()
         let key = "raceKey"
 
         // Multiple tasks updating the same key

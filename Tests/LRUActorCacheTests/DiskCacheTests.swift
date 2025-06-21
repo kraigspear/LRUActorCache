@@ -30,7 +30,7 @@ struct DiskCacheTests {
 
     @Test("Store and retrieve data from disk cache")
     func storeAndRetrieveData() throws {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         // Store data
         cache.setValue(testValue, at: testKey)
 
@@ -41,7 +41,7 @@ struct DiskCacheTests {
 
     @Test("Retrieve non-existent data returns nil")
     func retrieveNonExistentData() {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let nonExistentKey = "https://example.com/radar/nonexistent.png"
         let value = cache.getData(for: nonExistentKey)
         #expect(value == nil)
@@ -49,7 +49,7 @@ struct DiskCacheTests {
 
     @Test("Overwrite existing data")
     func overwriteExistingData() throws {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         // Store initial data
         cache.setValue(testValue, at: testKey)
 
@@ -70,7 +70,7 @@ struct DiskCacheTests {
 
     @Test("URLs with radar path generate valid cache keys")
     func urlsWithRadarPath() {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let keys = [
             "https://example.com/radar/weather/map.png",
             "https://example.com/radar/satellite/view.jpg",
@@ -88,7 +88,7 @@ struct DiskCacheTests {
 
     @Test("Complex radar paths are handled correctly")
     func complexRadarPaths() {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let complexKey = "https://example.com/api/v1/radar/region/north-america/layer/precipitation/tile/123/456.png"
         let value = TestDiskCachedValue(content: "Complex path data")
 
@@ -102,7 +102,7 @@ struct DiskCacheTests {
 
     @Test("Store and retrieve large data")
     func largeDataHandling() throws {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         // Create 1MB of text data
         let largeContent = String(repeating: "X", count: 1024 * 1024)
         let largeValue = TestDiskCachedValue(content: largeContent)
@@ -120,7 +120,7 @@ struct DiskCacheTests {
 
     @Test("Concurrent read and write operations")
     func concurrentAccess() async throws {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         await withTaskGroup(of: Void.self) { group in
             // Concurrent writes
             for i in 0 ..< 10 {
@@ -151,7 +151,7 @@ struct DiskCacheTests {
 
     @Test("Concurrent writes to same URL")
     func concurrentWritesToSameURL() async {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let sharedKey = "https://example.com/radar/shared.png"
 
         await withTaskGroup(of: Void.self) { group in
@@ -172,7 +172,7 @@ struct DiskCacheTests {
 
     @Test("URLs with special characters in path")
     func specialCharactersInPath() {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let specialKeys = [
             "https://example.com/radar/region%20name/image.png",
             "https://example.com/radar/file%20with%20spaces.png",
@@ -193,7 +193,7 @@ struct DiskCacheTests {
 
     @Test("Performance with many files")
     func performanceWithManyFiles() throws {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let startTime = Date()
 
         // Write 100 files
@@ -219,7 +219,7 @@ struct DiskCacheTests {
 
     @Test("Empty data handling")
     func emptyDataHandling() {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let emptyValue = TestDiskCachedValue(content: "")
         let key = "https://example.com/radar/empty.dat"
 
@@ -234,7 +234,7 @@ struct DiskCacheTests {
 
     @Test("URL with query parameters")
     func urlWithQueryParameters() {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let key = "https://example.com/radar/image.png?timestamp=123456&quality=high"
         let value = TestDiskCachedValue(content: "Query param data")
 
@@ -245,7 +245,7 @@ struct DiskCacheTests {
 
     @Test("URL with fragment")
     func urlWithFragment() {
-        let cache = DiskCache<String, TestDiskCachedValue>(reset: true)
+        let cache = DiskCache<String, TestDiskCachedValue>()
         let key = "https://example.com/radar/image.png#section1"
         let value = TestDiskCachedValue(content: "Fragment data")
 

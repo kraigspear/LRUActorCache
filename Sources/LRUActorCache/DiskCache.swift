@@ -50,11 +50,7 @@ final class DiskCache<Key: Hashable & CustomStringConvertible, Value: CachedValu
     /// The initializer creates a unique cache directory for this instance in the system's
     /// caches folder. If directory creation fails, the cache operates in a degraded
     /// mode where all operations become no-ops.
-    ///
-    /// - Parameter reset: If `true`, attempts to remove any existing cache directory
-    ///   before creating a new one. This parameter is largely obsolete since each
-    ///   instance now uses a unique directory.
-    public init(reset: Bool = false) {
+    public init() {
         let cachePath: URL
 
         let fileManager = FileManager.default
@@ -77,16 +73,6 @@ final class DiskCache<Key: Hashable & CustomStringConvertible, Value: CachedValu
         // Generate a unique subdirectory name for this instance
         let uniqueID = UUID().uuidString
         let cacheFolder = cachePath.appending(path: "DiskCache-\(uniqueID)")
-
-        if reset {
-            do {
-                if fileManager.fileExists(atPath: cacheFolder.path) {
-                    try fileManager.removeItem(at: cacheFolder)
-                }
-            } catch {
-                logger.error("Failed to remove cache folder error: \(error)")
-            }
-        }
 
         do {
             try fileManager.createDirectory(at: cacheFolder,

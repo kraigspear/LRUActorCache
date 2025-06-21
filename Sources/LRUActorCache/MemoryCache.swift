@@ -31,16 +31,11 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
 
     // MARK: - Initialization
 
-    /// Initializes a new memory cache with the specified limits.
+    /// Initializes a new memory cache.
     ///
-    /// - Parameters:
-    ///   - totalCostLimit: The maximum total cost of all items in the cache.
-    ///   - maxCount: The maximum number of items the cache can hold.
-    ///   - resetDiskCache: If true, clears the disk cache on initialization.
-    public init(
-        resetDiskCache: Bool = false
-    ) {
-        diskCache = DiskCache(reset: resetDiskCache)
+    /// Creates a new cache instance with its own unique disk cache directory.
+    public init() {
+        diskCache = DiskCache()
     }
 
     // MARK: - Public Cache Access
