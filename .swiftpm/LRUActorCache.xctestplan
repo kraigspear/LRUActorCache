@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "128B537D-F1CF-4214-9E69-9F73F248F7FE",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "LRUActorCacheTests",
+        "name" : "LRUActorCacheTests"
+      }
+    }
+  ],
+  "version" : 1
+}
