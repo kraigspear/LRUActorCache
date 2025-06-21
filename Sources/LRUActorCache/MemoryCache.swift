@@ -15,6 +15,27 @@ public protocol CachedValue: Sendable {
     static func fromData(data: Data) throws -> Self
 }
 
+/// Conformance of `Data` to `CachedValue` protocol.
+///
+/// This extension allows `Data` objects to be stored directly in the cache
+/// without requiring a wrapper type. Since `Data` is already serialized,
+/// the implementation simply returns itself for both serialization and
+/// deserialization operations.
+extension Data: CachedValue {
+    /// Returns self as the serialized data representation.
+    ///
+    /// Since `Data` is already in a serialized format, no conversion is needed.
+    public var data: Data { self }
+    
+    /// Creates a `Data` instance from serialized data.
+    ///
+    /// Since the input is already `Data`, this method simply returns it unchanged.
+    ///
+    /// - Parameter data: The serialized data.
+    /// - Returns: The same `Data` instance.
+    public static func fromData(data: Data) throws -> Data { data }
+}
+
 // MARK: - Container Class
 
 // MARK: - MemoryCache Actor
