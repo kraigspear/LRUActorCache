@@ -76,14 +76,14 @@ struct CacheTest {
         let value = TestCachedValue(someValue: "test10")
         await cache.set(value, for: key)
         let retrievedValue = try #require(await cache.value(for: key))
-        #expect(retrievedValue == value)
+        #expect(retrievedValue == value, "Retrieved value should match the stored value")
     }
 
     @Test("Contains Key")
     func containsKeys() async {
         await cache.set(TestCachedValue(someValue: "test1"), for: "key1")
-        #expect(await cache.contains("key1"))
-        #expect(await !cache.contains("key2"))
+        #expect(await cache.contains("key1"), "Cache should contain the key that was just set")
+        #expect(await !cache.contains("key2"), "Cache should not contain a key that was never set")
     }
 
     @Test("Disk Cache Within Same Instance")
@@ -96,10 +96,10 @@ struct CacheTest {
 
         // Value should be retrievable
         let retrievedValue = try #require(await cache.value(for: key))
-        #expect(retrievedValue == value)
+        #expect(retrievedValue == value, "Value should be retrievable from the same cache instance")
 
         // And should be in memory
-        #expect(await cache.contains(key))
+        #expect(await cache.contains(key), "Key should exist in memory cache after retrieval")
     }
 
     @Test("Deserialization Error Handling")
@@ -117,13 +117,13 @@ struct CacheTest {
 
         // Attempting to retrieve should return nil due to deserialization failure
         let retrievedValue = await cache2.value(for: key)
-        #expect(retrievedValue == nil)
+        #expect(retrievedValue == nil, "Deserialization failure should return nil, not throw")
 
         // Verify the corrupted file was deleted - a second attempt should also return nil
         // but won't try to load from disk since the file no longer exists
         let cache3 = MemoryCache<String, FailingCachedValue>()
         let secondAttempt = await cache3.value(for: key)
-        #expect(secondAttempt == nil)
+        #expect(secondAttempt == nil, "Corrupted file should be deleted after first failed attempt")
     }
 
     @Test("Concurrent Read Operations")
@@ -145,7 +145,7 @@ struct CacheTest {
 
             // Verify all reads return the same value
             for await result in group {
-                #expect(result == value)
+                #expect(result == value, "All concurrent reads should return the same cached value")
             }
         }
     }
@@ -170,7 +170,7 @@ struct CacheTest {
             let key = "key\(i)"
             let expectedValue = TestCachedValue(someValue: "value\(i)")
             let retrievedValue = await cache.value(for: key)
-            #expect(retrievedValue == expectedValue)
+            #expect(retrievedValue == expectedValue, "Each concurrent write should be stored correctly")
         }
     }
 
@@ -216,7 +216,7 @@ struct CacheTest {
             let key = "key\(i)"
             let expectedValue = TestCachedValue(someValue: "new\(i)")
             let retrievedValue = await cache.value(for: key)
-            #expect(retrievedValue == expectedValue)
+            #expect(retrievedValue == expectedValue, "New values written during concurrent operations should be stored")
         }
     }
 
@@ -237,7 +237,7 @@ struct CacheTest {
 
         // Verify that some value was set (we can't predict which one due to race conditions)
         let finalValue = await cache.value(for: key)
-        #expect(finalValue != nil)
-        #expect(finalValue?.someValue.starts(with: "update") == true)
+        #expect(finalValue != nil, "After concurrent updates, some value should be stored")
+        #expect(finalValue?.someValue.starts(with: "update") == true, "Stored value should be one of the updates")
     }
 }

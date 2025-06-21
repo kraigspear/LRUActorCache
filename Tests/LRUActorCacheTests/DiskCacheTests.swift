@@ -36,7 +36,7 @@ struct DiskCacheTests {
 
         // Retrieve data
         let retrievedValue = cache.getData(for: testKey)
-        #expect(retrievedValue == testValue)
+        #expect(retrievedValue == testValue, "Retrieved value should match the stored value")
     }
 
     @Test("Retrieve non-existent data returns nil")
@@ -44,7 +44,7 @@ struct DiskCacheTests {
         let cache = DiskCache<String, TestDiskCachedValue>()
         let nonExistentKey = "https://example.com/radar/nonexistent.png"
         let value = cache.getData(for: nonExistentKey)
-        #expect(value == nil)
+        #expect(value == nil, "Non-existent key should return nil")
     }
 
     @Test("Overwrite existing data")
@@ -55,7 +55,7 @@ struct DiskCacheTests {
 
         // Verify initial data
         var retrievedValue = cache.getData(for: testKey)
-        #expect(retrievedValue == testValue)
+        #expect(retrievedValue == testValue, "Initial value should be stored correctly")
 
         // Overwrite with new data
         let newValue = TestDiskCachedValue(content: "New test data")
@@ -63,7 +63,7 @@ struct DiskCacheTests {
 
         // Verify updated data
         retrievedValue = cache.getData(for: testKey)
-        #expect(retrievedValue == newValue)
+        #expect(retrievedValue == newValue, "Cache should return the updated value after overwrite")
     }
 
     // MARK: - Cache Key Tests
@@ -82,7 +82,7 @@ struct DiskCacheTests {
             cache.setValue(value, at: key)
 
             let retrievedValue = cache.getData(for: key)
-            #expect(retrievedValue == value)
+            #expect(retrievedValue == value, "Each URL key should store and retrieve its corresponding value")
         }
     }
 
@@ -95,7 +95,7 @@ struct DiskCacheTests {
         // Store and retrieve
         cache.setValue(value, at: complexKey)
         let retrievedValue = cache.getData(for: complexKey)
-        #expect(retrievedValue == value)
+        #expect(retrievedValue == value, "Complex URL paths should be handled correctly as cache keys")
     }
 
     // MARK: - Large Data Tests
@@ -113,7 +113,7 @@ struct DiskCacheTests {
 
         // Retrieve and verify
         let retrievedValue = cache.getData(for: largeDataKey)
-        #expect(retrievedValue == largeValue)
+        #expect(retrievedValue == largeValue, "Large data (1MB) should be stored and retrieved correctly")
     }
 
     // MARK: - Concurrent Access Tests
@@ -145,7 +145,7 @@ struct DiskCacheTests {
             let key = "https://example.com/radar/concurrent/image\(i).png"
             let expectedValue = TestDiskCachedValue(content: "Concurrent data \(i)")
             let retrievedValue = cache.getData(for: key)
-            #expect(retrievedValue == expectedValue)
+            #expect(retrievedValue == expectedValue, "All concurrent writes should complete successfully")
         }
     }
 
@@ -165,7 +165,7 @@ struct DiskCacheTests {
 
         // Should have some data (last write wins)
         let finalValue = cache.getData(for: sharedKey)
-        #expect(finalValue != nil)
+        #expect(finalValue != nil, "Concurrent writes to same key should result in some value being stored")
     }
 
     // MARK: - Special Characters Tests
@@ -185,7 +185,7 @@ struct DiskCacheTests {
             cache.setValue(value, at: key)
 
             let retrievedValue = cache.getData(for: key)
-            #expect(retrievedValue == value)
+            #expect(retrievedValue == value, "URLs with special characters should be valid cache keys")
         }
     }
 
@@ -212,7 +212,7 @@ struct DiskCacheTests {
         let elapsed = Date().timeIntervalSince(startTime)
 
         // Should complete in reasonable time (< 5 seconds)
-        #expect(elapsed < 5.0)
+        #expect(elapsed < 5.0, "Writing and reading 100 files should complete within 5 seconds")
     }
 
     // MARK: - Edge Cases
@@ -228,8 +228,8 @@ struct DiskCacheTests {
 
         // Should retrieve empty data (not nil)
         let retrievedValue = cache.getData(for: key)
-        #expect(retrievedValue == emptyValue)
-        #expect(retrievedValue?.content == "")
+        #expect(retrievedValue == emptyValue, "Empty data should be stored and retrieved successfully")
+        #expect(retrievedValue?.content == "", "Retrieved content should be empty string")
     }
 
     @Test("URL with query parameters")
@@ -240,7 +240,7 @@ struct DiskCacheTests {
 
         cache.setValue(value, at: key)
         let retrievedValue = cache.getData(for: key)
-        #expect(retrievedValue == value)
+        #expect(retrievedValue == value, "URLs with query parameters should work as cache keys")
     }
 
     @Test("URL with fragment")
@@ -251,6 +251,6 @@ struct DiskCacheTests {
 
         cache.setValue(value, at: key)
         let retrievedValue = cache.getData(for: key)
-        #expect(retrievedValue == value)
+        #expect(retrievedValue == value, "URLs with fragments should work as cache keys")
     }
 }
