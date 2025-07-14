@@ -23,15 +23,15 @@ swift package clean
 
 ## Architecture Overview
 
-This Swift package implements a thread-safe LRU (Least Recently Used) cache with both memory and disk storage capabilities.
+This Swift package implements a thread-safe memory cache with automatic eviction and disk persistence. The cache leverages NSCache for memory management, which provides system-integrated eviction policies based on available memory rather than strict LRU behavior.
 
 ### Core Components
 
 1. **MemoryCache** (`Sources/LRUActorCache/MemoryCache.swift`)
    - Actor-based thread-safe implementation
-   - Cost-based eviction with configurable limits
-   - LRU eviction policy using doubly-linked list
-   - Automatic memory pressure handling
+   - Built on NSCache for automatic memory management
+   - NSCache handles eviction based on system memory pressure
+   - Automatic eviction when memory is needed by the system
    - Integration with DiskCache for persistence
 
 2. **DiskCache** (`Sources/LRUActorCache/DiskCache.swift`)
@@ -47,9 +47,9 @@ This Swift package implements a thread-safe LRU (Least Recently Used) cache with
 ### Key Design Patterns
 
 - **Actor Pattern**: Both caches use Swift actors for thread safety
-- **LRU Implementation**: Uses doubly-linked list with head/tail pointers for O(1) operations
-- **Memory Pressure Handling**: Responds to system memory warnings by evicting items
-- **Cost-Based Eviction**: Items have associated costs, cache has total cost limit
+- **NSCache Foundation**: Leverages NSCache's built-in memory management and eviction policies
+- **Memory Pressure Handling**: NSCache automatically responds to system memory warnings
+- **System Integration**: NSCache integrates with iOS/macOS memory management systems
 
 ### Platform Requirements
 

@@ -26,7 +26,7 @@ extension Data: CachedValue {
     ///
     /// Since `Data` is already in a serialized format, no conversion is needed.
     public var data: Data { self }
-    
+
     /// Creates a `Data` instance from serialized data.
     ///
     /// Since the input is already `Data`, this method simply returns it unchanged.
@@ -40,10 +40,10 @@ extension Data: CachedValue {
 
 // MARK: - MemoryCache Actor
 
-/// An actor that manages a memory cache with a maximum item count and total cost limit.
+/// An actor that manages a memory cache with automatic eviction.
 ///
-/// `MemoryCache` provides thread-safe access to cached values, automatically
-/// removing the least recently used items when limits are exceeded.
+/// `MemoryCache` provides thread-safe access to cached values using NSCache
+/// for automatic memory management and eviction based on system memory pressure.
 public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Value: CachedValue> {
     // MARK: - Properties
 
@@ -87,10 +87,9 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
         return nil
     }
 
-    /// Checks if a value exists in the cache without affecting its LRU position.
+    /// Checks if a value exists in the memory cache.
     ///
-    /// Unlike `value(for:)`, this method won't promote the item to the front of the LRU list,
-    /// making it useful for cache inspection without side effects.
+    /// This method only checks the in-memory cache and doesn't check disk storage.
     ///
     /// - Parameter key: The key to look up in the cache.
     /// - Returns: `true` if the key exists in the cache, `false` otherwise.
@@ -101,8 +100,8 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
 
     /// Sets a value in the cache for the given key.
     ///
-    /// If the key already exists, the value is updated. If adding the new value
-    /// would exceed the cache limits, the least recently used items are removed.
+    /// If the key already exists, the value is updated. NSCache automatically
+    /// handles eviction when memory pressure occurs.
     ///
     /// - Parameters:
     ///   - value: The value to cache.

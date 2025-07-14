@@ -1,0 +1,28 @@
+# SwiftFormat configuration file
+
+# Indentation
+--indent 4
+
+# Disabled rules
+--disable wrapMultilineStatementBraces
+
+# Code organization
+--self remove # Remove explicit self where not required
+--importgrouping testable-bottom # Group @testable imports at the bottom
+--commas always # Trailing commas in arrays, dictionaries
+--trimwhitespace always # Remove trailing whitespace
+--header strip # Remove header comments or use a custom one
+--ifdef no-indent # Don't indent code inside #if blocks
+
+# Additional Apple-style conventions
+--xcodeindentation enabled # Match Xcode's indentation behavior
+--linebreaks lf # Use Unix line endings
+--semicolons never # Remove unnecessary semicolons
+--stripunusedargs closure-only # Remove unused closure arguments
+--wraparguments before-first # Wrap function arguments before first
+--wrapparameters before-first # Wrap function parameters before first
+--wrapcollections before-first # Wrap array/dict literals before first
+--closingparen balanced # Match opening indentation for multi-line
+--funcattributes prev-line # Function attributes on previous line
+--typeattributes prev-line # Type attributes on previous line
+--maxwidth 120 # Wrap lines longer than 120 characters
