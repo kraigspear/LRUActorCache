@@ -69,15 +69,20 @@ Our testing approach focuses on:
 - **External dependencies**: File system state we can't control
 - **Flaky tests**: System conditions are unpredictable
 
-### 3. DiskCache Cleanup
+### 3. DiskCache (Now Private Implementation Detail)
+**Change**: DiskCache is now a private nested class within MemoryCache
+
 **Not Tested:**
-- Directory deletion on deinit
-- Cleanup after crashes
+- Direct DiskCache operations (it's now private)
+- Cleanup functionality (runs on init, deinit, and every 100 writes)
+- Directory creation/management
+- File-level operations
 
 **Rationale:** 
-- **Timing issues**: Can't reliably test deinit behavior
-- **Side effects**: Would affect other tests
-- **Best effort**: Cleanup is not critical to functionality
+- **Implementation detail**: DiskCache is now internal to MemoryCache
+- **Thread safety**: Guaranteed by MemoryCache actor context
+- **No public API**: Cannot be accessed or tested directly
+- **Best effort cleanup**: Runs automatically but not critical to test
 
 ### 4. Performance Metrics
 **Not Tested:**
@@ -94,13 +99,12 @@ Our testing approach focuses on:
 
 ### ✅ Completed
 
-#### 1. DiskCache.exist(for:) Method
-**Status**: ✅ Implemented in DiskCacheTests.swift
-- Basic functionality test
-- Multiple keys existence check
-- Special characters in keys
-- Existence after overwrite
-- Concurrent existence checks
+#### 1. DiskCache Refactoring
+**Status**: ✅ Completed
+- Moved DiskCache to private nested class in MemoryCache
+- Removed all direct DiskCache tests (it's now an implementation detail)
+- Implemented automatic cleanup on init, deinit, and every 100 writes
+- Thread safety guaranteed by MemoryCache actor context
 
 ### ❌ Not Implemented (With Rationale)
 

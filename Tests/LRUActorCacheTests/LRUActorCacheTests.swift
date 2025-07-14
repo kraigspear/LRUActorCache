@@ -67,7 +67,7 @@ struct CacheTest {
     private let cache: MemoryCache<String, TestCachedValue>
 
     init() {
-        cache = MemoryCache<String, TestCachedValue>()
+        cache = MemoryCache<String, TestCachedValue>(identifier: "test-cache")
     }
 
     @Test("Set and Retrieve Value")
@@ -89,7 +89,7 @@ struct CacheTest {
     @Test("Disk Cache Within Same Instance")
     func diskCacheWithinSameInstance() async throws {
         // Test that disk cache works within the same cache instance
-        let cache = MemoryCache<String, TestCachedValue>()
+        let cache = MemoryCache<String, TestCachedValue>(identifier: "test-cache")
         let key = "persistentKey"
         let value = TestCachedValue(someValue: "persistentValue")
         await cache.set(value, for: key)
@@ -105,7 +105,7 @@ struct CacheTest {
     @Test("Deserialization Error Handling")
     func deserializationErrorHandling() async throws {
         // Create a cache with failing values
-        let cache = MemoryCache<String, FailingCachedValue>()
+        let cache = MemoryCache<String, FailingCachedValue>(identifier: "test-cache")
 
         // Store a value that will fail deserialization when loaded from disk
         let key = "failingKey"
@@ -113,7 +113,7 @@ struct CacheTest {
         await cache.set(failingValue, for: key)
 
         // Create a new cache instance to force loading from disk
-        let cache2 = MemoryCache<String, FailingCachedValue>()
+        let cache2 = MemoryCache<String, FailingCachedValue>(identifier: "test-cache")
 
         // Attempting to retrieve should return nil due to deserialization failure
         let retrievedValue = await cache2.value(for: key)
@@ -121,14 +121,14 @@ struct CacheTest {
 
         // Verify the corrupted file was deleted - a second attempt should also return nil
         // but won't try to load from disk since the file no longer exists
-        let cache3 = MemoryCache<String, FailingCachedValue>()
+        let cache3 = MemoryCache<String, FailingCachedValue>(identifier: "test-cache")
         let secondAttempt = await cache3.value(for: key)
         #expect(secondAttempt == nil, "Corrupted file should be deleted after first failed attempt")
     }
 
     @Test("Concurrent Read Operations")
     func concurrentReadOperations() async throws {
-        let cache = MemoryCache<String, TestCachedValue>()
+        let cache = MemoryCache<String, TestCachedValue>(identifier: "test-cache")
         let key = "concurrentKey"
         let value = TestCachedValue(someValue: "concurrentValue")
 
@@ -152,7 +152,7 @@ struct CacheTest {
 
     @Test("Concurrent Write Operations")
     func concurrentWriteOperations() async throws {
-        let cache = MemoryCache<String, TestCachedValue>()
+        let cache = MemoryCache<String, TestCachedValue>(identifier: "test-cache")
 
         // Perform multiple concurrent writes to different keys
         await withTaskGroup(of: Void.self) { group in
@@ -176,7 +176,7 @@ struct CacheTest {
 
     @Test("Concurrent Mixed Operations")
     func concurrentMixedOperations() async throws {
-        let cache = MemoryCache<String, TestCachedValue>()
+        let cache = MemoryCache<String, TestCachedValue>(identifier: "test-cache")
 
         // Pre-populate some values
         for i in 0 ..< 10 {
@@ -222,7 +222,7 @@ struct CacheTest {
 
     @Test("Concurrent Same Key Updates")
     func concurrentSameKeyUpdates() async throws {
-        let cache = MemoryCache<String, TestCachedValue>()
+        let cache = MemoryCache<String, TestCachedValue>(identifier: "test-cache")
         let key = "raceKey"
 
         // Multiple tasks updating the same key
@@ -259,7 +259,7 @@ struct DataCachedValueTests {
 
     @Test("Store and retrieve Data in MemoryCache")
     func storeAndRetrieveDataInMemoryCache() async throws {
-        let cache = MemoryCache<String, Data>()
+        let cache = MemoryCache<String, Data>(identifier: "test-cache")
         let key = "dataKey"
         let testData = "Test data content".data(using: .utf8)!
 
@@ -274,23 +274,9 @@ struct DataCachedValueTests {
         #expect(await cache.contains(key), "Cache should contain the Data key")
     }
 
-    @Test("Store and retrieve Data in DiskCache")
-    func storeAndRetrieveDataInDiskCache() {
-        let cache = DiskCache<String, Data>()
-        let key = "diskDataKey"
-        let testData = "Persistent data content".data(using: .utf8)!
-
-        // Store Data
-        cache.setValue(testData, at: key)
-
-        // Retrieve Data
-        let retrievedData = cache.getData(for: key)
-        #expect(retrievedData == testData, "Retrieved Data from disk should match stored Data")
-    }
-
     @Test("Data persistence within same cache instance")
     func dataPersistenceWithinSameCacheInstance() async throws {
-        let cache = MemoryCache<String, Data>()
+        let cache = MemoryCache<String, Data>(identifier: "test-cache")
         let key = "persistentDataKey"
         let testData = "Persistent data".data(using: .utf8)!
 
@@ -309,7 +295,7 @@ struct DataCachedValueTests {
 
     @Test("Large Data handling")
     func largeDataHandling() async throws {
-        let cache = MemoryCache<String, Data>()
+        let cache = MemoryCache<String, Data>(identifier: "test-cache")
         let key = "largeDataKey"
 
         // Create 1MB of data
@@ -326,7 +312,7 @@ struct DataCachedValueTests {
 
     @Test("Empty Data handling")
     func emptyDataHandling() async throws {
-        let cache = MemoryCache<String, Data>()
+        let cache = MemoryCache<String, Data>(identifier: "test-cache")
         let key = "emptyDataKey"
         let emptyData = Data()
 

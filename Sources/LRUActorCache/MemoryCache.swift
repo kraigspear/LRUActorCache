@@ -48,15 +48,19 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
     // MARK: - Properties
 
     private let values = NSCache<NSString, NSData>()
-    private let diskCache: DiskCache<Key, Value>
+    private let diskCache: DiskCache
 
     // MARK: - Initialization
 
-    /// Initializes a new memory cache.
+    /// Initializes a new memory cache with the specified identifier.
     ///
-    /// Creates a new cache instance with its own unique disk cache directory.
-    public init() {
-        diskCache = DiskCache()
+    /// The identifier is passed to the disk cache to determine the storage directory.
+    /// Multiple MemoryCache instances with the same identifier will share the same
+    /// disk storage, enabling data persistence across instances.
+    ///
+    /// - Parameter identifier: A unique identifier for this cache's disk storage.
+    public init(identifier: String) {
+        diskCache = DiskCache(identifier: identifier)
     }
 
     // MARK: - Public Cache Access
