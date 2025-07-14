@@ -257,4 +257,106 @@ struct DiskCacheTests {
         let retrievedValue = cache.getData(for: key)
         #expect(retrievedValue == value, "URLs with fragments should work as cache keys")
     }
+
+    // MARK: - exist(for:) Method Tests
+
+    @Test("Basic exist functionality")
+    func basicExistFunctionality() {
+        let cache = DiskCache<String, TestDiskCachedValue>()
+        let key = "existTestKey"
+        let value = TestDiskCachedValue(content: "test content")
+
+        // Should not exist initially
+        #expect(!cache.exist(for: key), "Key should not exist before being set")
+
+        // Should exist after setting
+        cache.setValue(value, at: key)
+        #expect(cache.exist(for: key), "Key should exist after being set")
+
+        // Should handle non-existent keys
+        #expect(!cache.exist(for: "nonExistentKey"), "Non-existent key should return false")
+    }
+
+    @Test("Multiple keys existence check")
+    func multipleKeysExistence() {
+        let cache = DiskCache<String, TestDiskCachedValue>()
+        let keys = ["key1", "key2", "key3"]
+        let values = keys.map { TestDiskCachedValue(content: "content for \($0)") }
+
+        // Set only first two keys
+        for i in 0 ..< 2 {
+            cache.setValue(values[i], at: keys[i])
+        }
+
+        // Check existence
+        #expect(cache.exist(for: keys[0]), "First key should exist")
+        #expect(cache.exist(for: keys[1]), "Second key should exist")
+        #expect(!cache.exist(for: keys[2]), "Third key should not exist")
+    }
+
+    @Test("Special characters in key")
+    func specialCharactersInKey() {
+        let cache = DiskCache<String, TestDiskCachedValue>()
+        let specialKeys = [
+            "key with spaces",
+            "key/with/slashes",
+            "key?with=query&params",
+            "key#with#hash",
+            "unicode-🔑-key",
+        ]
+
+        for key in specialKeys {
+            let value = TestDiskCachedValue(content: "content")
+
+            #expect(!cache.exist(for: key), "Key '\(key)' should not exist initially")
+
+            cache.setValue(value, at: key)
+
+            #expect(cache.exist(for: key), "Key '\(key)' should exist after being set")
+        }
+    }
+
+    @Test("Existence check after overwrite")
+    func existenceAfterOverwrite() {
+        let cache = DiskCache<String, TestDiskCachedValue>()
+        let key = "overwriteKey"
+        let value1 = TestDiskCachedValue(content: "original")
+        let value2 = TestDiskCachedValue(content: "updated")
+
+        // Set initial value
+        cache.setValue(value1, at: key)
+        #expect(cache.exist(for: key), "Key should exist after initial set")
+
+        // Overwrite value
+        cache.setValue(value2, at: key)
+        #expect(cache.exist(for: key), "Key should still exist after overwrite")
+
+        // Verify the updated value
+        let retrieved = cache.getData(for: key)
+        #expect(retrieved?.content == "updated", "Should retrieve the updated value")
+    }
+
+    @Test("Concurrent existence checks")
+    func concurrentExistenceChecks() async {
+        let cache = DiskCache<String, TestDiskCachedValue>()
+        let key = "concurrentExistKey"
+        let value = TestDiskCachedValue(content: "concurrent test")
+
+        // Set the value
+        cache.setValue(value, at: key)
+
+        // Perform concurrent existence checks
+        await withTaskGroup(of: Bool.self) { group in
+            for _ in 0 ..< 50 {
+                group.addTask {
+                    cache.exist(for: key)
+                }
+            }
+
+            // All checks should return true
+            for await result in group {
+                #expect(result == true, "Concurrent exist check should return true")
+            }
+        }
+    }
 }
