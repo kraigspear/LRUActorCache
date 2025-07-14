@@ -13,7 +13,11 @@ private struct TestDiskCachedValue: CachedValue, Equatable {
 
     static func fromData(data: Data) throws -> TestDiskCachedValue {
         guard let content = String(data: data, encoding: .utf8) else {
-            throw NSError(domain: "TestDiskCachedValue", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode data"])
+            throw NSError(
+                domain: "TestDiskCachedValue",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to decode data"]
+            )
         }
         return TestDiskCachedValue(content: content)
     }

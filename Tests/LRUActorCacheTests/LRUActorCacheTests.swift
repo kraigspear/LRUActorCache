@@ -251,88 +251,88 @@ struct DataCachedValueTests {
         // Verify Data.data returns self
         let testData = "Hello, World!".data(using: .utf8)!
         #expect(testData.data == testData, "Data.data should return self")
-        
+
         // Verify Data.fromData returns input unchanged
         let result = try? Data.fromData(data: testData)
         #expect(result == testData, "Data.fromData should return the input unchanged")
     }
-    
+
     @Test("Store and retrieve Data in MemoryCache")
     func storeAndRetrieveDataInMemoryCache() async throws {
         let cache = MemoryCache<String, Data>()
         let key = "dataKey"
         let testData = "Test data content".data(using: .utf8)!
-        
+
         // Store Data
         await cache.set(testData, for: key)
-        
+
         // Retrieve Data
         let retrievedData = await cache.value(for: key)
         #expect(retrievedData == testData, "Retrieved Data should match stored Data")
-        
+
         // Verify contains
         #expect(await cache.contains(key), "Cache should contain the Data key")
     }
-    
+
     @Test("Store and retrieve Data in DiskCache")
     func storeAndRetrieveDataInDiskCache() {
         let cache = DiskCache<String, Data>()
         let key = "diskDataKey"
         let testData = "Persistent data content".data(using: .utf8)!
-        
+
         // Store Data
         cache.setValue(testData, at: key)
-        
+
         // Retrieve Data
         let retrievedData = cache.getData(for: key)
         #expect(retrievedData == testData, "Retrieved Data from disk should match stored Data")
     }
-    
+
     @Test("Data persistence within same cache instance")
     func dataPersistenceWithinSameCacheInstance() async throws {
         let cache = MemoryCache<String, Data>()
         let key = "persistentDataKey"
         let testData = "Persistent data".data(using: .utf8)!
-        
+
         // Store data
         await cache.set(testData, for: key)
-        
+
         // Retrieve from same instance (should be in memory)
         let fromMemory = await cache.value(for: key)
         #expect(fromMemory == testData, "Data should be retrievable from memory")
-        
+
         // Verify it's in the cache
         #expect(await cache.contains(key), "Cache should contain the key")
-        
+
         // Note: Each cache instance has its own disk directory, so data doesn't persist across instances
     }
-    
+
     @Test("Large Data handling")
     func largeDataHandling() async throws {
         let cache = MemoryCache<String, Data>()
         let key = "largeDataKey"
-        
+
         // Create 1MB of data
         let largeData = Data(repeating: 0xFF, count: 1024 * 1024)
-        
+
         // Store large Data
         await cache.set(largeData, for: key)
-        
+
         // Retrieve and verify
         let retrievedData = await cache.value(for: key)
         #expect(retrievedData == largeData, "Large Data should be stored and retrieved correctly")
         #expect(retrievedData?.count == 1024 * 1024, "Retrieved Data size should match")
     }
-    
+
     @Test("Empty Data handling")
     func emptyDataHandling() async throws {
         let cache = MemoryCache<String, Data>()
         let key = "emptyDataKey"
         let emptyData = Data()
-        
+
         // Store empty Data
         await cache.set(emptyData, for: key)
-        
+
         // Retrieve and verify
         let retrievedData = await cache.value(for: key)
         #expect(retrievedData == emptyData, "Empty Data should be stored and retrieved")

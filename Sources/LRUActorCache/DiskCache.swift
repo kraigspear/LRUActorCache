@@ -1,10 +1,3 @@
-//
-//  DiskCache.swift
-//  LRUActorCache
-//
-//  Created by Kraig Spear on 6/8/25.
-//
-
 import CryptoKit
 import Foundation
 
@@ -75,8 +68,10 @@ final class DiskCache<Key: Hashable & CustomStringConvertible, Value: CachedValu
         let cacheFolder = cachePath.appending(path: "DiskCache-\(uniqueID)")
 
         do {
-            try fileManager.createDirectory(at: cacheFolder,
-                                            withIntermediateDirectories: true)
+            try fileManager.createDirectory(
+                at: cacheFolder,
+                withIntermediateDirectories: true
+            )
             self.cacheFolder = cacheFolder
         } catch {
             assertionFailure("Failed to create cache directory: error: \(error)")
