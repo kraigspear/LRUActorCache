@@ -325,3 +325,188 @@ struct DataCachedValueTests {
         #expect(retrievedData?.isEmpty == true, "Retrieved Data should be empty")
     }
 }
+
+// MARK: - Disk Persistence Tests
+
+@Suite("DiskPersistenceTests", .serialized)
+struct DiskPersistenceTests {
+    @Test("Disk persistence across cache instances")
+    func diskPersistenceAcrossInstances() async throws {
+        let identifier = "persistence-test"
+        let key = "persistKey"
+        let value = TestCachedValue(someValue: "persisted data")
+
+        // First cache instance - write data
+        do {
+            let cache1 = MemoryCache<String, TestCachedValue>(identifier: identifier)
+            await cache1.set(value, for: key)
+
+            // Verify it's stored
+            let retrieved = await cache1.value(for: key)
+            #expect(retrieved == value, "Value should be retrievable from first instance")
+        }
+
+        // Cache1 is now out of scope, only disk storage remains
+
+        // Second cache instance - should load from disk
+        do {
+            let cache2 = MemoryCache<String, TestCachedValue>(identifier: identifier)
+            let retrieved = await cache2.value(for: key)
+            #expect(retrieved == value, "Value should persist across cache instances via disk")
+        }
+    }
+
+    @Test("Multiple cache instances with same identifier share storage")
+    func multipleCachesWithSameIdentifier() async throws {
+        let identifier = "shared-storage"
+        let cache1 = MemoryCache<String, TestCachedValue>(identifier: identifier)
+        let cache2 = MemoryCache<String, TestCachedValue>(identifier: identifier)
+
+        let key = "sharedKey"
+        let value = TestCachedValue(someValue: "shared data")
+
+        // Write with cache1
+        await cache1.set(value, for: key)
+
+        // Read with cache2 (will read from disk since not in its memory)
+        let retrieved = await cache2.value(for: key)
+        #expect(retrieved == value, "Cache2 should read cache1's data from shared disk storage")
+
+        // Now cache2 has it in memory too
+        #expect(await cache2.contains(key), "Cache2 should have the value in memory after reading from disk")
+    }
+
+    @Test("Different identifiers have isolated storage")
+    func differentIdentifiersAreIsolated() async throws {
+        let cacheA = MemoryCache<String, TestCachedValue>(identifier: "cache-A")
+        let cacheB = MemoryCache<String, TestCachedValue>(identifier: "cache-B")
+
+        let key = "sameKey"
+        let valueA = TestCachedValue(someValue: "data for A")
+        let valueB = TestCachedValue(someValue: "data for B")
+
+        // Set different values with same key
+        await cacheA.set(valueA, for: key)
+        await cacheB.set(valueB, for: key)
+
+        // Each should have its own value
+        let retrievedA = await cacheA.value(for: key)
+        let retrievedB = await cacheB.value(for: key)
+
+        #expect(retrievedA == valueA, "Cache A should have its own value")
+        #expect(retrievedB == valueB, "Cache B should have its own value")
+        #expect(retrievedA != retrievedB, "Different identifiers should not share data")
+    }
+
+    @Test("Contains only checks memory, not disk")
+    func containsOnlyChecksMemory() async throws {
+        let identifier = "memory-check-test"
+        let key = "testKey"
+        let value = TestCachedValue(someValue: "test data")
+
+        // First instance - write to disk
+        do {
+            let cache1 = MemoryCache<String, TestCachedValue>(identifier: identifier)
+            await cache1.set(value, for: key)
+            #expect(await cache1.contains(key), "Should be in memory after set")
+        }
+
+        // Second instance - data is on disk but not in memory
+        do {
+            let cache2 = MemoryCache<String, TestCachedValue>(identifier: identifier)
+            #expect(await !cache2.contains(key), "Contains should return false when only on disk")
+
+            // After retrieving, it should be in memory
+            let retrieved = await cache2.value(for: key)
+            #expect(retrieved != nil, "Value should be retrievable from disk")
+            #expect(await cache2.contains(key), "Should be in memory after retrieval")
+        }
+    }
+}
+
+// MARK: - Edge Case Tests
+
+@Suite("EdgeCaseTests", .serialized)
+struct EdgeCaseTests {
+    @Test("Very long keys are handled correctly")
+    func veryLongKeys() async throws {
+        let cache = MemoryCache<String, TestCachedValue>(identifier: "long-key-test")
+
+        // Create a very long key (1000 characters)
+        let longKey = String(repeating: "a", count: 1000)
+        let value = TestCachedValue(someValue: "data for long key")
+
+        await cache.set(value, for: longKey)
+        let retrieved = await cache.value(for: longKey)
+
+        #expect(retrieved == value, "Very long keys should work correctly")
+    }
+
+    @Test("Special characters in cache identifier")
+    func specialCharactersInIdentifier() async throws {
+        // Test various special characters that might cause issues
+        let identifiers = [
+            "cache with spaces",
+            "cache/with/slashes",
+            "cache.with.dots",
+            "cache-with-dashes",
+            "cache_with_underscores",
+            "cache@with@symbols",
+            "cache#with#hashes",
+        ]
+
+        for identifier in identifiers {
+            let cache = MemoryCache<String, TestCachedValue>(identifier: identifier)
+            let key = "testKey"
+            let value = TestCachedValue(someValue: "test data for \(identifier)")
+
+            await cache.set(value, for: key)
+            let retrieved = await cache.value(for: key)
+
+            #expect(retrieved == value, "Identifier '\(identifier)' should work correctly")
+        }
+    }
+
+    @Test("Unicode in keys and identifiers")
+    func unicodeSupport() async throws {
+        let cache = MemoryCache<String, TestCachedValue>(identifier: "缓存-キャッシュ")
+
+        let unicodeKeys = [
+            "🔑",
+            "中文键",
+            "キー",
+            "🇺🇸🇯🇵",
+            "مفتاح",
+            "κλειδί",
+        ]
+
+        for (index, key) in unicodeKeys.enumerated() {
+            let value = TestCachedValue(someValue: "data \(index)")
+            await cache.set(value, for: key)
+            let retrieved = await cache.value(for: key)
+            #expect(retrieved == value, "Unicode key '\(key)' should work correctly")
+        }
+    }
+
+    @Test("Rapid instance creation and destruction")
+    func rapidInstanceCreation() async throws {
+        let identifier = "rapid-test"
+        let key = "testKey"
+        let value = TestCachedValue(someValue: "persistent data")
+
+        // Create and destroy many instances rapidly
+        for i in 0 ..< 10 {
+            let cache = MemoryCache<String, TestCachedValue>(identifier: identifier)
+
+            if i == 0 {
+                // First instance sets the value
+                await cache.set(value, for: key)
+            } else {
+                // Subsequent instances should find it on disk
+                let retrieved = await cache.value(for: key)
+                #expect(retrieved == value, "Instance \(i) should retrieve value from disk")
+            }
+            // Cache goes out of scope here
+        }
+    }
+}

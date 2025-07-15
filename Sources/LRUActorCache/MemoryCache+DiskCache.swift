@@ -79,11 +79,11 @@ extension MemoryCache {
                 self.cacheFolder = nil
                 return
             }
-            
+
             // Clean up old files on initialization
             cleanup()
         }
-        
+
         deinit {
             // Clean up old files when this instance is deallocated
             // Note: We don't remove the directory itself since it may be shared with other instances

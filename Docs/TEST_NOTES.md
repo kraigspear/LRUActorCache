@@ -35,12 +35,17 @@ Our testing approach focuses on:
 - **Invalid data**: Graceful handling of malformed cache files
 - **Missing files**: Proper nil returns for non-existent keys
 
-### 5. DiskCache Features
-- **SHA256 hashing**: Special characters in keys
-- **URL support**: Query parameters, fragments, encoded characters
-- **Large files**: 1MB+ data handling
-- **Empty data**: Zero-byte file support
-- **Unicode**: Non-ASCII characters in keys
+### 5. Disk Persistence (NEW)
+- **Cross-instance persistence**: Data survives cache instance destruction
+- **Shared storage**: Multiple instances with same identifier share disk
+- **Storage isolation**: Different identifiers have separate storage
+- **Memory-only contains**: Contains() only checks memory, not disk
+
+### 6. Edge Cases (NEW)
+- **Very long keys**: 1000+ character keys work correctly
+- **Special identifiers**: Spaces, slashes, dots, etc. in cache identifiers
+- **Unicode support**: Emoji and international characters in keys/identifiers
+- **Rapid instantiation**: Many instances created/destroyed quickly
 
 ## ❌ What We Don't Test (And Why)
 
@@ -239,11 +244,14 @@ When adding new tests:
 ### Current Status: ✅ Comprehensive
 
 The test suite provides excellent coverage for:
-- ✅ All public API methods (including DiskCache.exist)
+- ✅ All public API methods
 - ✅ Concurrent operations and thread safety
 - ✅ Error handling we can control
-- ✅ Edge cases (special characters, empty data, large files)
+- ✅ Disk persistence across instances
+- ✅ Cache identifier isolation
+- ✅ Edge cases (special characters, unicode, long keys)
 - ✅ Protocol conformance
+- ✅ 21 tests covering all major scenarios
 
 ### Intentionally Not Tested
 - ❌ NSCache internals (Apple's responsibility)
