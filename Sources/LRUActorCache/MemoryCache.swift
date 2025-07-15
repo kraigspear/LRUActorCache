@@ -64,13 +64,19 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
 
     // MARK: - Public Cache Access
 
+    /// Sets a value in memory cache only, without writing to disk.
+    /// Used internally when loading values from disk to avoid redundant disk writes.
+    private func setInMemoryOnly(_ value: Value, for key: Key) {
+        let nsKey = key.description as NSString
+        let data = value.data as NSData
+        values.setObject(data, forKey: nsKey)
+    }
+
     /// Retrieves a value from the cache for the given key.
     ///
     /// - Parameter key: The key to look up in the cache.
     /// - Returns: The cached value if found, or `nil` if not present.
     public func value(for key: Key) async -> Value? {
-        logger.trace("value: \(key)")
-
         let nsKey = key.description as NSString
 
         if let data = values.object(forKey: nsKey) {
@@ -83,7 +89,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
 
         if let fromDisk = diskCache.getData(for: key) {
             logger.debug("Found item on disk for \(key)")
-            await set(fromDisk, for: key)
+            setInMemoryOnly(fromDisk, for: key)
             return fromDisk
         }
 
