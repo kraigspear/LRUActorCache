@@ -87,6 +87,8 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
             }
         }
 
+        // TODO: This disk read blocks the actor. Consider making DiskCache
+        // Sendable or using a different concurrency approach to avoid blocking.
         if let fromDisk = diskCache.getData(for: key) {
             logger.debug("Found item on disk for \(key)")
             setInMemoryOnly(fromDisk, for: key)
