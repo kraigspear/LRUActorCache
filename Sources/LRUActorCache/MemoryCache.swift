@@ -1,4 +1,3 @@
-
 import Foundation
 import os
 
@@ -106,6 +105,8 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
     ///
     /// If the key already exists, the value is updated. NSCache automatically
     /// handles eviction when memory pressure occurs.
+    ///
+    /// The disk write is performed asynchronously and fire-and-forget.
     ///
     /// - Parameters:
     ///   - value: The value to cache.

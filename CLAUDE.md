@@ -34,10 +34,12 @@ This Swift package implements a thread-safe memory cache with automatic eviction
    - Automatic eviction when memory is needed by the system
    - Integration with DiskCache for persistence
 
-2. **DiskCache** (`Sources/LRUActorCache/DiskCache.swift`)
-   - Persistent storage in `~/Library/Caches/DiskCache/`
+2. **DiskCache** (Private nested class in `MemoryCache+DiskCache.swift`)
+   - Persistent storage in `~/Library/Caches/DiskCache-{identifier}/`
    - SHA256-based file naming for cache keys
-   - Generic implementation supporting any Hashable key type
+   - Automatic cleanup of files older than 1 hour (optimized for radar images)
+   - Time-based cleanup triggers every 30 minutes
+   - Asynchronous cleanup to avoid blocking write operations
 
 3. **CachedValue Protocol**
    - Requires `cost: Int` property for memory management

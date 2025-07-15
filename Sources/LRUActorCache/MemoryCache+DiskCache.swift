@@ -22,8 +22,14 @@ extension MemoryCache {
         /// Logger for debugging and error reporting
         private let logger = LogContext.diskCache.logger()
 
-        /// Counter for write operations to trigger periodic cleanup
-        private var writeCount = 0
+        /// Last time cleanup was performed
+        private var lastCleanupTime = Date()
+
+        /// How often to check for cleanup (30 minutes)
+        private let cleanupInterval: TimeInterval = 1800
+
+        /// Maximum age for cache files (1 hour for radar images)
+        private let maxFileAge: TimeInterval = 3600
 
         // MARK: - Initialization
 
@@ -73,11 +79,11 @@ extension MemoryCache {
                 self.cacheFolder = nil
                 return
             }
-
+            
             // Clean up old files on initialization
             cleanup()
         }
-
+        
         deinit {
             // Clean up old files when this instance is deallocated
             // Note: We don't remove the directory itself since it may be shared with other instances
@@ -174,25 +180,31 @@ extension MemoryCache {
                 logger.error("Error writing to at path: \(cacheDestination) cache: \(error)")
             }
 
-            // Increment write count and trigger cleanup if needed
-            writeCount += 1
-            if writeCount % 100 == 0 {
+            // Check if enough time has passed since last cleanup
+            let now = Date()
+            if now.timeIntervalSince(lastCleanupTime) > cleanupInterval {
+                lastCleanupTime = now
+                // Perform cleanup synchronously - it's within actor context
+                // Since cleanup only runs every 30 minutes, the occasional
+                // blocking is acceptable for maintaining simplicity
                 cleanup()
             }
         }
 
         // MARK: - Private Methods
 
-        /// Removes cache files older than 2 hours from the shared cache directory.
+        /// Removes cache files older than maxFileAge from the shared cache directory.
         /// This method is called:
         /// - On init to clean up old files from previous app sessions
         /// - On deinit to clean up before this instance is deallocated
-        /// - Every 100 writes to prevent unbounded growth
+        /// - Periodically when cleanupInterval has passed since last cleanup
+        ///
+        /// For radar images, files older than 1 hour are considered stale and removed.
         private func cleanup() {
             guard let cacheFolder else { return }
 
             let fileManager = FileManager.default
-            let cutoffDate = Date().addingTimeInterval(-2 * 60 * 60) // 2 hours ago
+            let cutoffDate = Date().addingTimeInterval(-maxFileAge)
 
             do {
                 let files = try fileManager.contentsOfDirectory(
