@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let logger = LogContext.cache.logger()
+private let signposter = LogContext.cache.signposter()
 
 // MARK: - Protocols
 
@@ -48,7 +48,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
 
     private let values = NSCache<NSString, NSData>()
     private let diskCache: DiskCache
-    
+
     /// Tracks write operations to trigger periodic disk cleanup.
     ///
     /// We use count-based cleanup instead of time-based because:
@@ -69,7 +69,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
     public init(identifier: String) {
         diskCache = DiskCache(identifier: identifier)
     }
-    
+
     /// Determines if disk cleanup should run after the next write.
     ///
     /// Returns true every 100 writes to prevent unbounded disk growth
@@ -78,7 +78,7 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
         let numberOfWritesBeforeCleanup = 100
         return numberOfWrites >= numberOfWritesBeforeCleanup
     }
-    
+
     // MARK: - Public Cache Access
 
     /// Sets a value in memory cache only, without writing to disk.
@@ -101,6 +101,10 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
     /// - Parameter key: The key to look up in the cache.
     /// - Returns: The cached value if found, or `nil` if not present.
     public func value(for key: Key) async -> Value? {
+        let signpostID = signposter.makeSignpostID()
+        let state = signposter.beginInterval("CacheRead", id: signpostID)
+        defer { signposter.endInterval("CacheRead", state) }
+
         let nsKey = key.description as NSString
 
         if let data = values.object(forKey: nsKey) {
@@ -114,7 +118,6 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
         // Load from disk if not in memory. This is now async and doesn't block
         // the actor because DiskCache is Sendable and uses async file operations.
         if let fromDisk = await diskCache.getData(for: key) {
-            logger.debug("Found item on disk for \(key)")
             setInMemoryOnly(fromDisk, for: key)
             return fromDisk
         }
@@ -147,17 +150,17 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
         let nsKey = key.description as NSString
         let data = value.data as NSData
         values.setObject(data, forKey: nsKey)
-        
+
         // Check cleanup status before the write to maintain consistent state.
         // We pass this decision to DiskCache rather than calling cleanup directly
         // to keep all disk operations encapsulated within DiskCache.
-        let dueForCleanup = self.dueForCleanup
+        let dueForCleanup = dueForCleanup
         diskCache.setValue(
             value,
             at: key,
             cleanUpAfterSet: dueForCleanup
         )
-        
+
         // Reset counter after cleanup to track the next batch of writes.
         // Incrementing before cleanup could cause off-by-one errors.
         if dueForCleanup {

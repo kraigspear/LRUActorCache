@@ -26,8 +26,8 @@ extension MemoryCache {
         /// Logger for debugging and error reporting
         private let logger = LogContext.diskCache.logger()
 
-        /// How often to check for cleanup (30 minutes)
-        private let cleanupInterval: TimeInterval = 1800
+        /// Signposter for performance profiling
+        private let signposter = LogContext.diskCache.signposter()
 
         /// Maximum age for cache files (1 hour for radar images)
         private let maxFileAge: TimeInterval = 3600
@@ -119,8 +119,6 @@ extension MemoryCache {
                 return nil
             }
 
-            logger.debug("key: \(key) found in cache")
-
             guard let cacheFolder else {
                 return nil
             }
@@ -145,20 +143,18 @@ extension MemoryCache {
 
             do {
                 let value = try Value.fromData(data: data)
-                logger.debug("success loading \(key) from cache")
                 return value
             } catch {
                 logger.error("Error decoding \(key) from cache, deleting corrupted file")
                 do {
                     try FileManager.default.removeItem(at: cacheSource)
-                    logger.debug("Successfully deleted corrupted cache file for \(key)")
                 } catch {
                     logger.error("Failed to delete corrupted file \(cacheSource.path) error: \(error)")
                 }
                 return nil
             }
         }
-        
+
         /// Reads file contents asynchronously to avoid blocking the actor.
         ///
         /// Uses FileHandle's async bytes API to read files without blocking.
@@ -169,17 +165,21 @@ extension MemoryCache {
         /// - Returns: The complete file contents
         /// - Throws: File system errors if the read fails
         private func readFromFile(url: URL) async throws -> Data {
+            let signpostID = signposter.makeSignpostID()
+            let state = signposter.beginInterval("DiskRead", id: signpostID)
+            defer { signposter.endInterval("DiskRead", state) }
+
             let fileHandle = try FileHandle(forReadingFrom: url)
-            
+
             defer {
                 try? fileHandle.close()
             }
-            
+
             var contents = Data()
             for try await chunk in fileHandle.bytes {
                 contents.append(chunk)
             }
-            
+
             return contents
         }
 
@@ -233,6 +233,10 @@ extension MemoryCache {
         private func cleanup() {
             guard let cacheFolder else { return }
 
+            let signpostID = signposter.makeSignpostID()
+            let state = signposter.beginInterval("DiskCleanup", id: signpostID)
+            defer { signposter.endInterval("DiskCleanup", state) }
+
             let fileManager = FileManager.default
             let cutoffDate = Date().addingTimeInterval(-maxFileAge)
 
@@ -242,17 +246,23 @@ extension MemoryCache {
                     includingPropertiesForKeys: [.contentModificationDateKey]
                 )
 
+                var removedCount = 0
                 for file in files {
                     do {
                         let attributes = try file.resourceValues(forKeys: [.contentModificationDateKey])
                         if let modificationDate = attributes.contentModificationDate,
                            modificationDate < cutoffDate {
                             try fileManager.removeItem(at: file)
-                            logger.debug("Removed old cache file: \(file.lastPathComponent)")
+                            removedCount += 1
                         }
                     } catch {
                         logger.error("Failed to process cache file \(file.lastPathComponent): \(error)")
                     }
+                }
+
+                // Log summary instead of per-file details for better performance
+                if removedCount > 0 {
+                    logger.info("Cleanup removed \(removedCount) old cache files")
                 }
             } catch {
                 logger.error("Failed to enumerate cache directory: \(error)")
