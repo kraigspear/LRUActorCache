@@ -17,18 +17,22 @@ The cache is designed around these core principles:
 ┌─────────────────────────────────────────────────────────┐
 │                    MemoryCache (Actor)                   │
 │                                                          │
-│  ┌─────────────────┐           ┌────────────────────┐   │
-│  │     NSCache     │           │     DiskCache      │   │
-│  │  <NSString,     │           │                    │   │
-│  │   NSData>       │           │  ┌──────────────┐  │   │
-│  └────────┬────────┘           │  │ FileManager  │  │   │
-│           │                    │  └──────────────┘  │   │
-│           │                    │                    │   │
-│  ┌────────▼────────┐           │  ┌──────────────┐  │   │
-│  │  Auto Memory    │           │  │   SHA256     │  │   │
-│  │  Management     │           │  │   Hashing    │  │   │
-│  └─────────────────┘           │  └──────────────┘  │   │
-│                                └────────────────────┘   │
+│  ┌─────────────────┐                                    │
+│  │     NSCache     │    ┌────────────────────────────┐  │
+│  │  <NSString,     │    │  Private DiskCache Class   │  │
+│  │   NSData>       │    │      (Sendable)            │  │
+│  └────────┬────────┘    │  ┌────────────────────┐   │  │
+│           │             │  │  Async FileHandle   │   │  │
+│           │             │  │    Operations       │   │  │
+│  ┌────────▼────────┐    │  └────────────────────┘   │  │
+│  │  Auto Memory    │    │  ┌────────────────────┐   │  │
+│  │  Management     │    │  │  SHA256 Hashing    │   │  │
+│  └─────────────────┘    │  └────────────────────┘   │  │
+│                         │  ┌────────────────────┐   │  │
+│  ┌─────────────────┐    │  │  Count-Based       │   │  │
+│  │  OSSignposter   │    │  │  Cleanup (100)     │   │  │
+│  │  Performance    │    │  └────────────────────┘   │  │
+│  └─────────────────┘    └────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -60,17 +64,21 @@ Benefits of NSCache:
 
 ### DiskCache
 
-Provides persistent storage with these characteristics:
+DiskCache is now a private nested class within MemoryCache, providing persistent storage with these characteristics:
 
-- **Unique directories**: Each cache instance creates its own directory
+- **Private implementation detail**: Not accessible outside MemoryCache
+- **Sendable conformance**: Enables async operations without blocking the actor
+- **Identifier-based directories**: Multiple caches with same identifier share storage
 - **SHA256 filenames**: Prevents filesystem issues with special characters
-- **Automatic cleanup**: Directory removed on deallocation
+- **Count-based cleanup**: Removes old files every 100 writes (not time-based)
+- **Async file operations**: Uses FileHandle's async APIs for non-blocking I/O
 - **Error resilience**: Corrupted files are automatically deleted
 
 Design decisions:
-- Not shared between instances (intentional isolation)
-- No expiration/TTL (simplicity)
-- Synchronous I/O (called from async context)
+- **Nested class**: Encapsulates disk operations as implementation detail
+- **Stateless design**: All mutable state managed by MemoryCache actor
+- **1-hour file expiration**: Optimized for radar image use case
+- **Fire-and-forget writes**: Disk writes don't block cache operations
 
 ## Data Flow
 
@@ -82,20 +90,25 @@ set(value, key)
     ├─► Convert key to NSString
     ├─► Serialize value to NSData
     ├─► Store in NSCache
+    ├─► Check if cleanup needed (every 100 writes)
     └─► Store in DiskCache (fire-and-forget)
+         └─► Run cleanup if needed
 ```
 
 ### Cache Read Operation
 
 ```
-value(for: key)
+value(for: key) [Signpost: CacheRead]
     │
     ├─► Check NSCache
     │   ├─► Found: Return value
     │   └─► Not found: Continue
     │
-    └─► Check DiskCache
-        ├─► Found: Store in NSCache, return value
+    └─► Check DiskCache (async)
+        ├─► Found: [Signpost: DiskRead]
+        │   ├─► Read file async (FileHandle.bytes)
+        │   ├─► Store in NSCache (setInMemoryOnly)
+        │   └─► Return value
         └─► Not found: Return nil
 ```
 
@@ -126,7 +139,14 @@ The cache uses Swift's actor model for concurrency:
 1. **Actor isolation**: All mutable state is isolated within the actor
 2. **Async/await**: All public methods are async
 3. **No locks needed**: Actor model prevents data races
-4. **DiskCache safety**: Marked `Sendable` and designed for concurrent use
+4. **DiskCache safety**: Marked `Sendable` with immutable state
+5. **Non-blocking I/O**: Async file operations don't block the actor
+
+### Performance Optimizations
+
+- **Async disk reads**: FileHandle.bytes API allows concurrent operations
+- **OSSignposter integration**: Performance profiling without production impact
+- **Reduced logging**: Summary logs instead of per-operation details
 
 ## Error Handling Strategy
 
@@ -156,7 +176,18 @@ Three log contexts for different concerns:
 2. **diskCache**: Disk I/O operations  
 3. **memoryPressure**: Memory-related events
 
-Each logger includes appropriate metadata for filtering and debugging.
+Each context provides:
+- **Logger**: For error and informational messages
+- **Signposter**: For performance profiling with Instruments
+
+### Performance Monitoring
+
+OSSignposter usage for critical paths:
+- **CacheRead**: Total time for cache retrieval operations
+- **DiskRead**: Time spent reading from disk
+- **DiskCleanup**: Time spent cleaning old files
+
+Signposts have zero overhead in production unless actively profiling.
 
 ## Future Considerations
 

@@ -70,18 +70,21 @@ public actor MemoryCache {
 
 ### Documentation
 
-All public APIs must have documentation comments:
+All public APIs must have documentation comments following the standards in CLAUDE.md:
 
 ```swift
 /// Retrieves a value from the cache for the given key.
 ///
 /// This method first checks the memory cache, then falls back to disk storage
-/// if the value is not found in memory.
+/// if the value is not found in memory. The disk read operation is performed
+/// asynchronously without blocking the actor.
 ///
 /// - Parameter key: The key to look up in the cache.
 /// - Returns: The cached value if found, or `nil` if not present.
 public func value(for key: Key) async -> Value?
 ```
+
+**Important**: Focus on WHY not HOW in comments. See CLAUDE.md for detailed documentation standards.
 
 ## Architecture Guidelines
 
@@ -111,19 +114,27 @@ func getData(for key: Key) -> Value? {
 func getData(for key: Key) throws -> Value  // Don't do this
 ```
 
-### Logging
+### Logging and Performance Monitoring
 
 Use the established LogContext pattern:
 
 ```swift
 private let logger = LogContext.cache.logger()
+private let signposter = LogContext.cache.signposter()
 
 // Log levels:
-// - trace: Very detailed operations (e.g., every cache access)
-// - debug: Useful debugging info (e.g., cache hits/misses)
+// - debug: Useful debugging info (avoid verbose per-operation logs)
+// - info: Important events (e.g., cleanup summaries)
 // - error: Errors that are handled gracefully
 // - critical: Serious issues that may affect functionality
+
+// Performance monitoring with signposts:
+let signpostID = signposter.makeSignpostID()
+let state = signposter.beginInterval("OperationName", id: signpostID)
+defer { signposter.endInterval("OperationName", state) }
 ```
+
+**Note**: Avoid excessive debug logging in hot paths. Use signposts for performance monitoring instead.
 
 ## Testing Guidelines
 
@@ -196,9 +207,12 @@ private struct TestCachedValue: CachedValue, Equatable {
    ```
 
 4. Update documentation if needed:
-   - API documentation in code
+   - API documentation in code (following CLAUDE.md standards)
    - README.md for user-facing changes
-   - Docs/ folder for implementation changes
+   - Docs/ folder for implementation changes:
+     - ARCHITECTURE.md for structural changes
+     - IMPLEMENTATION.md for code organization
+     - TEST_NOTES.md for test coverage updates
 
 5. Commit with clear messages:
    ```bash
@@ -225,6 +239,24 @@ Add batch operations for improved performance when caching multiple values.
 
 ## Performance
 Batch operations are ~3x faster for 100+ items.
+```
+
+## Project Structure
+
+```
+Sources/LRUActorCache/
+├── MemoryCache.swift           # Main actor implementation
+├── MemoryCache+DiskCache.swift # Private DiskCache nested class
+└── LogContext.swift            # Logging and performance monitoring
+
+Tests/LRUActorCacheTests/
+└── LRUActorCacheTests.swift    # All test suites
+
+Docs/
+├── ARCHITECTURE.md             # High-level design
+├── IMPLEMENTATION.md           # Code organization details
+├── TEST_NOTES.md               # Test coverage documentation
+└── CONTRIBUTING.md             # This file
 ```
 
 ## Common Tasks
