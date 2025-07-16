@@ -77,3 +77,40 @@ The package uses Swift Testing framework (@Test attributes). Tests are located i
 - Cost-based eviction
 - Edge cases and error handling
 - Disk cache persistence
+
+## Documentation Standards
+
+When documenting code in this project, follow these guidelines:
+
+### Code Comments
+- **Focus on WHY, not HOW**: Comments should explain the reasoning behind decisions, not describe what the code does
+- **Examples**:
+  ```swift
+  // BAD: Increment the counter by 1
+  counter += 1
+  
+  // GOOD: Reset counter after cleanup to track next batch
+  counter = 0
+  ```
+
+### DocC Documentation
+- **Document all public interfaces**: Every public type, method, and property needs DocC comments
+- **Document internal interfaces**: Internal APIs should also have DocC comments for team clarity
+- **Format**:
+  ```swift
+  /// Brief description of what this does.
+  ///
+  /// More detailed explanation if needed, including usage context
+  /// and important considerations.
+  ///
+  /// - Parameters:
+  ///   - param1: What this parameter represents and constraints
+  ///   - param2: What this parameter represents and constraints
+  /// - Returns: What is returned and in what cases
+  /// - Throws: What errors can be thrown and when
+  ```
+
+### What NOT to Document
+- Private implementation details that are self-evident
+- Obvious code that speaks for itself
+- Standard Swift patterns that any Swift developer would understand

@@ -48,6 +48,14 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
 
     private let values = NSCache<NSString, NSData>()
     private let diskCache: DiskCache
+    
+    /// Tracks write operations to trigger periodic disk cleanup.
+    ///
+    /// We use count-based cleanup instead of time-based because:
+    /// - Simpler state management (just an integer vs dates)
+    /// - Predictable cleanup intervals based on usage patterns
+    /// - Avoids date comparisons and time calculations
+    private var numberOfWrites = 0
 
     // MARK: - Initialization
 
@@ -61,11 +69,27 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
     public init(identifier: String) {
         diskCache = DiskCache(identifier: identifier)
     }
-
+    
+    /// Determines if disk cleanup should run after the next write.
+    ///
+    /// Returns true every 100 writes to prevent unbounded disk growth
+    /// while avoiding excessive cleanup operations that could impact performance.
+    private var dueForCleanup: Bool {
+        let numberOfWritesBeforeCleanup = 100
+        return numberOfWrites >= numberOfWritesBeforeCleanup
+    }
+    
     // MARK: - Public Cache Access
 
     /// Sets a value in memory cache only, without writing to disk.
-    /// Used internally when loading values from disk to avoid redundant disk writes.
+    ///
+    /// This internal method exists to avoid redundant disk writes when loading
+    /// from disk. Writing back to disk would be wasteful since the data
+    /// already exists there and hasn't changed.
+    ///
+    /// - Parameters:
+    ///   - value: The value to store in memory
+    ///   - key: The cache key
     private func setInMemoryOnly(_ value: Value, for key: Key) {
         let nsKey = key.description as NSString
         let data = value.data as NSData
@@ -87,9 +111,9 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
             }
         }
 
-        // TODO: This disk read blocks the actor. Consider making DiskCache
-        // Sendable or using a different concurrency approach to avoid blocking.
-        if let fromDisk = diskCache.getData(for: key) {
+        // Load from disk if not in memory. This is now async and doesn't block
+        // the actor because DiskCache is Sendable and uses async file operations.
+        if let fromDisk = await diskCache.getData(for: key) {
             logger.debug("Found item on disk for \(key)")
             setInMemoryOnly(fromDisk, for: key)
             return fromDisk
@@ -123,6 +147,23 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
         let nsKey = key.description as NSString
         let data = value.data as NSData
         values.setObject(data, forKey: nsKey)
-        diskCache.setValue(value, at: key)
+        
+        // Check cleanup status before the write to maintain consistent state.
+        // We pass this decision to DiskCache rather than calling cleanup directly
+        // to keep all disk operations encapsulated within DiskCache.
+        let dueForCleanup = self.dueForCleanup
+        diskCache.setValue(
+            value,
+            at: key,
+            cleanUpAfterSet: dueForCleanup
+        )
+        
+        // Reset counter after cleanup to track the next batch of writes.
+        // Incrementing before cleanup could cause off-by-one errors.
+        if dueForCleanup {
+            numberOfWrites = 0
+        } else {
+            numberOfWrites += 1
+        }
     }
 }
