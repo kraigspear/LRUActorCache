@@ -79,7 +79,7 @@ Our testing approach focuses on:
 
 **Not Tested:**
 - Direct DiskCache operations (it's now private)
-- Cleanup functionality (runs on init, deinit, and periodically every 30 minutes)
+- Cleanup functionality (runs on init, deinit, and every 100 writes)
 - Directory creation/management
 - File-level operations
 
@@ -108,10 +108,10 @@ Our testing approach focuses on:
 **Status**: ✅ Completed
 - Moved DiskCache to private nested class in MemoryCache
 - Removed all direct DiskCache tests (it's now an implementation detail)
-- Implemented automatic cleanup on init, deinit, and every 30 minutes
+- Implemented automatic cleanup on init, deinit, and every 100 writes
 - Cleanup removes files older than 1 hour (optimized for radar image use case)
 - Thread safety guaranteed by MemoryCache actor context
-- Cleanup runs asynchronously to avoid blocking write operations
+- DiskCache is Sendable with async file operations
 
 ### ❌ Not Implemented (With Rationale)
 

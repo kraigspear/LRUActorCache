@@ -6,13 +6,12 @@ This document provides a detailed walkthrough of the codebase implementation for
 
 ```
 Sources/LRUActorCache/
-├── MemoryCache.swift    # Main cache actor and CachedValue protocol
-├── DiskCache.swift      # Persistent storage implementation
-└── LogContext.swift     # Logging infrastructure
+├── MemoryCache.swift            # Main cache actor and CachedValue protocol
+├── MemoryCache+DiskCache.swift  # Private DiskCache nested class
+└── LogContext.swift             # Logging and performance monitoring
 
 Tests/LRUActorCacheTests/
-├── LRUActorCacheTests.swift  # MemoryCache tests
-└── DiskCacheTests.swift       # DiskCache tests
+└── LRUActorCacheTests.swift     # All test suites (21 tests)
 ```
 
 ## MemoryCache Implementation
@@ -33,7 +32,8 @@ public actor MemoryCache<Key: Hashable & CustomStringConvertible & Sendable, Val
 
 ```swift
 private let values = NSCache<NSString, NSData>()
-private let diskCache: DiskCache<Key, Value>
+private let diskCache: DiskCache
+private var numberOfWrites = 0  // Track writes for cleanup
 ```
 
 **Why NSString/NSData?**
@@ -75,7 +75,8 @@ public func set(_ value: Value, for key: Key) async
 
 **Important notes:**
 - No error handling - operations cannot fail from caller's perspective
-- Disk write is synchronous but called from async context
+- Disk write includes cleanup check every 100 writes
+- Cleanup decision passed to DiskCache to keep disk operations together
 
 #### `contains(_:)` - Existence Check
 
@@ -90,20 +91,33 @@ public func contains(_ key: Key) -> Bool
 
 ## DiskCache Implementation
 
+DiskCache is now a private nested class within MemoryCache:
+
+```swift
+extension MemoryCache {
+    final class DiskCache: Sendable {
+        // All properties are immutable for Sendable conformance
+        private let cacheFolder: URL?
+        private let logger = LogContext.diskCache.logger()
+        private let signposter = LogContext.diskCache.signposter()
+    }
+}
+```
+
 ### Directory Management
 
 ```swift
-init() {
-    // Create unique directory in ~/Library/Caches/DiskCache-{UUID}/
-    let uniqueID = UUID().uuidString
-    let cacheFolder = cachePath.appending(path: "DiskCache-\(uniqueID)")
+init(identifier: String) {
+    // Create directory based on identifier: ~/Library/Caches/DiskCache-{identifier}/
+    let cacheFolder = cachePath.appending(path: "DiskCache-\(identifier)")
 }
 ```
 
 **Design decisions:**
-- Each instance gets unique directory (no sharing)
+- Identifier-based directories enable sharing between instances
 - Uses system caches directory (cleaned by OS if needed)
-- Directory created on init, removed on deinit
+- Directory created on init, cleanup runs on init/deinit and every 100 writes
+- Files older than 1 hour are removed (optimized for radar images)
 
 ### File Naming
 
@@ -127,13 +141,13 @@ private extension String {
 - No collisions in practice
 - Deterministic (same key → same filename)
 
-### Error Handling
+### Async File Operations
 
 ```swift
-func getData(for key: Key) -> Value? {
-    // Try to read file
+func getData(for key: Key) async -> Value? {
+    // Async file reading for non-blocking I/O
     do {
-        data = try Data(contentsOf: cacheSource)
+        data = try await readFromFile(url: cacheSource)
     } catch {
         // Delete corrupted file
         try? FileManager.default.removeItem(at: cacheSource)
@@ -150,12 +164,30 @@ func getData(for key: Key) -> Value? {
         return nil
     }
 }
+
+private func readFromFile(url: URL) async throws -> Data {
+    let signpostID = signposter.makeSignpostID()
+    let state = signposter.beginInterval("DiskRead", id: signpostID)
+    defer { signposter.endInterval("DiskRead", state) }
+    
+    // Use FileHandle for async reading
+    let fileHandle = try FileHandle(forReadingFrom: url)
+    defer { try? fileHandle.close() }
+    
+    var contents = Data()
+    for try await chunk in fileHandle.bytes {
+        contents.append(chunk)
+    }
+    return contents
+}
 ```
 
 **Resilience features:**
 - Corrupted files are automatically deleted
 - All errors logged but not thrown
 - Cache continues functioning even if disk fails
+- Async operations don't block the actor
+- Cleanup runs periodically to prevent unbounded growth
 
 ## Protocol Implementation
 
@@ -228,14 +260,18 @@ await withTaskGroup(of: Void.self) { group in
 
 **Disk persistence testing:**
 ```swift
-// Note: Each cache instance has its own directory
-// So you can't test persistence across instances
-let cache1 = MemoryCache<String, TestValue>()
+// Caches with same identifier share disk storage
+let cache1 = MemoryCache<String, TestValue>(identifier: "shared")
 await cache1.set(value, for: key)
 
-let cache2 = MemoryCache<String, TestValue>()
+let cache2 = MemoryCache<String, TestValue>(identifier: "shared")
 let retrieved = await cache2.value(for: key)
-// retrieved will be nil (different disk directories)
+// retrieved will contain the value (shared disk directory)
+
+// Different identifiers have isolated storage
+let cacheA = MemoryCache<String, TestValue>(identifier: "A")
+let cacheB = MemoryCache<String, TestValue>(identifier: "B")
+// These caches don't share data
 ```
 
 ## Performance Considerations
@@ -248,9 +284,11 @@ let retrieved = await cache2.value(for: key)
 
 ### Disk I/O
 
-- Synchronous file operations (but called from async context)
+- Async file read operations using FileHandle.bytes
+- Synchronous writes (fire-and-forget from actor)
 - No batching or write coalescing
 - Each set triggers immediate disk write
+- Cleanup runs every 100 writes to manage disk usage
 
 ### Key Generation
 
@@ -261,10 +299,11 @@ let retrieved = await cache2.value(for: key)
 ## Common Pitfalls
 
 1. **Assuming LRU behavior**: NSCache doesn't guarantee LRU eviction
-2. **Expecting persistence across instances**: Each instance has unique directory
-3. **Key description**: Must be stable across app launches
-4. **Large values**: No built-in size limits
-5. **Error handling**: Cache operations don't throw
+2. **Key description**: Must be stable across app launches
+3. **Large values**: No built-in size limits
+4. **Error handling**: Cache operations don't throw
+5. **Cleanup timing**: Based on write count, not time
+6. **Shared storage**: Instances with same identifier share disk
 
 ## Debugging Tips
 
@@ -277,18 +316,25 @@ private let logger = LogContext.cache.logger()
 
 ### Log Points
 
-- Cache hits/misses in `value(for:)`
-- Disk operations in DiskCache
-- Errors during deserialization
+- Errors during file operations
+- Cleanup summaries (number of files removed)
+- Deserialization failures
+
+### Performance Monitoring
+
+Use Instruments with signposts:
+- `CacheRead` - Total cache retrieval time
+- `DiskRead` - Async file read operations
+- `DiskCleanup` - Cleanup operation duration
 
 ### Using Console.app
 
 Filter by subsystem: `com.spareware.LRUActorCache`
 
 Categories:
-- `cache` - General operations
-- `diskCache` - Disk I/O
-- `memoryPressure` - Memory events (not currently used)
+- `🐏cache` - General operations
+- `💾diskCache` - Disk I/O
+- `⚠️memoryPressure` - Memory events (not currently used)
 
 ## Extension Points
 
@@ -331,6 +377,8 @@ public actor MemoryCache {
 
 1. **NSCache eviction**: Not predictable or controllable
 2. **Actor reentrancy**: Awaiting can allow other operations to interleave
-3. **Disk space**: No limits on disk usage
+3. **Disk space**: Managed by cleanup every 100 writes
 4. **Key collisions**: Technically possible with SHA256 (but extremely unlikely)
-5. **Thread safety**: DiskCache must remain Sendable
+5. **Thread safety**: DiskCache is Sendable with immutable state
+6. **Async operations**: DiskCache reads don't block the actor
+7. **Cleanup**: Runs on init, deinit, and periodically during writes
