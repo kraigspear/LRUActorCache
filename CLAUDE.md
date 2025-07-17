@@ -114,3 +114,8 @@ When documenting code in this project, follow these guidelines:
 - Private implementation details that are self-evident
 - Obvious code that speaks for itself
 - Standard Swift patterns that any Swift developer would understand
+
+## Code Review
+- A Philosophy of Software Design is a guiding principle
+- We want to follow Apple's guidance on how they write code
+- We want testable code, but we also favor simplicity and readability  
